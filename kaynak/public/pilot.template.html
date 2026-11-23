@@ -959,9 +959,11 @@ setInterval(()=>{ WX.tick(1);
 // ======================================================================
 let bc=null; try{ bc=new BroadcastChannel('twrsim'); }catch(e){}
 let lastB=0;
-function broadcast(force){ const now=Date.now(); if(!force&&now-lastB<200) return; lastB=now;
+function broadcast(force){ const now=Date.now(); if(!force&&now-lastB<90) return; lastB=now;
   const msg={t:'state',wx:{inp:WX.inp,cur:WX.cur,hist:WX.hist.slice(-600),active:activeRwy},
-    traffic:TR.map(a=>({id:a.id,kind:a.kind,cs:a.cs,type:a.type,pos:a.pos,hdg:a.hdg,alt:a.alt,air:!!a.air,ias:a.ias}))};
+    traffic:TR.map(a=>{ let v=[0,0],vz=0; if(a._bp){ const dt=(now-a._bt)/1000; if(dt>0.02){ v=[(a.pos[0]-a._bp[0])/dt,(a.pos[1]-a._bp[1])/dt]; vz=(a.alt-a._ba)/dt; } }
+      a._bp=a.pos.slice(); a._ba=a.alt; a._bt=now;
+      return {id:a.id,kind:a.kind,cs:a.cs,type:a.type,pos:a.pos,hdg:a.hdg,alt:a.alt,air:!!a.air,ias:a.ias,v:[+v[0].toFixed(2),+v[1].toFixed(2)],vz:+vz.toFixed(2)}; })};
   try{ bc&&bc.postMessage(msg); }catch(e){}
   if(NET.on) NET.sendState(force?{wx:{inp:WX.inp},wxc:WX.cur,traffic:msg.traffic}:{wxc:WX.cur,traffic:msg.traffic});
   try{ localStorage.setItem('twrsim.wx',JSON.stringify(msg.wx)); }catch(e){} }

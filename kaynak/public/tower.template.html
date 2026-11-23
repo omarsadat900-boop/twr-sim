@@ -390,17 +390,24 @@ function makeAircraft(small){
   if(!small){ for(const x of [-7,7]){ const e=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,4,8),acDark); e.rotation.x=Math.PI/2; e.position.set(x,-2.2,-3); g.add(e); } }
   return g; }
 function makeVehicle(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.4,2.4,6),vehMat); m.position.y=1.2; const g=new THREE.Group(); g.add(m); return g; }
-const objs=new Map();
+const objs=new Map(); window.__objs=objs;
+let lastTF=0;
 function trafficFrame(now){
-  const T=window.__traffic||{}, seen=new Set();
+  const T=window.__traffic||{}, seen=new Set(), dt=Math.min(0.2,lastTF?(now-lastTF)/1000:0.016); lastTF=now;
+  const k=1-Math.exp(-dt*9), kh=1-Math.exp(-dt*7);
   for(const list of Object.values(T)) for(const a of (list||[])){
     seen.add(a.id); let o=objs.get(a.id);
-    if(!o){ const small=/^(C1|C17|DA|P28|SR2)/.test(a.type||''); o={g:a.kind==='veh'?makeVehicle():makeAircraft(small),last:null,v:[0,0],t:now}; scene.add(o.g); objs.set(a.id,o); }
-    const key=a.pos[0]+','+a.pos[1];
-    if(o.key!==key){ if(o.last){ const dt=(now-o.t)/1000; if(dt>0.05) o.v=[(a.pos[0]-o.last[0])/dt,(a.pos[1]-o.last[1])/dt]; } o.last=a.pos.slice(); o.t=now; o.key=key; }
-    const ex=Math.min(1.2,(now-o.t)/1000), x=a.pos[0]+o.v[0]*ex, y=a.pos[1]+o.v[1]*ex;
-    const h=a.kind==='veh'?0:Math.max(0,(a.alt-DATA.elev_ft)*0.3048)+(a.air?0:2.6);
-    o.g.position.set(x,h,-y); o.g.rotation.y=-a.hdg*Math.PI/180;
+    if(!o){ const small=/^(C1|C17|DA|P28|SR2)/.test(a.type||''); o={g:a.kind==='veh'?makeVehicle():makeAircraft(small),key:null}; scene.add(o.g); objs.set(a.id,o); }
+    const key=a.pos[0]+','+a.pos[1]+','+a.hdg+','+a.alt;
+    if(o.key!==key){ // a new sample arrived
+      if(!a.v&&o.p){ const d=(now-o.t)/1000; if(d>0.05) o.v=[(a.pos[0]-o.p[0])/d,(a.pos[1]-o.p[1])/d]; }
+      else o.v=a.v||[0,0];
+      o.vz=a.vz||0; o.p=a.pos.slice(); o.alt=a.alt; o.t=now; o.key=key; }
+    const ex=Math.min(0.6,(now-o.t)/1000), tx=o.p[0]+(o.v?o.v[0]:0)*ex, ty=o.p[1]+(o.v?o.v[1]:0)*ex, ta=o.alt+(o.vz||0)*ex;
+    if(!o.r||Math.hypot(tx-o.r[0],ty-o.r[1])>300){ o.r=[tx,ty]; o.ra=ta; o.rh=a.hdg; }
+    else { o.r[0]+=(tx-o.r[0])*k; o.r[1]+=(ty-o.r[1])*k; o.ra+=(ta-o.ra)*k; o.rh+=(((a.hdg-o.rh)%360+540)%360-180)*kh; }
+    const h=a.kind==='veh'?0:Math.max(0,(o.ra-DATA.elev_ft)*0.3048)+(a.air?0:2.6);
+    o.g.position.set(o.r[0],h,-o.r[1]); o.g.rotation.y=-o.rh*Math.PI/180;
   }
   objs.forEach((o,id)=>{ if(!seen.has(id)){ scene.remove(o.g); objs.delete(id); } });
 }
