@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TWR SİM</title>
+</head>
+<body>
+
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-screen landing scene (canvas) with corner controls and two round join buttons over the aircraft. Single committed look (daylight apron), so colours are explicit. */
+:root{
+  --ink:#10202e; --paper:#ffffff; --glass:rgba(12,24,36,.55); --glass-line:rgba(255,255,255,.28);
+  --sky-top:#5f8fc4; --sky-low:#c9d9e6; --accent:#f1c12b; --go:#1f9d55;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif; --body:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:#9fb9cf;color:var(--paper);font-family:var(--body);overflow:hidden}
+#scene{position:fixed;inset:0;width:100%;height:100%;display:block}
+.ui{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr auto;
+  padding-block:calc(env(safe-area-inset-top,0px) + 14px) calc(env(safe-area-inset-bottom,0px) + 14px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.chip{display:inline-flex;align-items:center;gap:8px;background:var(--glass);border:1px solid var(--glass-line);color:var(--paper);
+  border-radius:10px;padding:8px 12px;font:500 14px var(--body);cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.chip:hover{background:rgba(12,24,36,.72)}
+.chip:focus-visible,.join:focus-visible,.btn:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.chip svg{width:20px;height:20px;flex:none}
+.acct{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.acct .who{display:flex;align-items:center;gap:8px;font:600 14px var(--body);text-shadow:0 1px 3px rgba(0,0,0,.5)}
+.avatar{width:40px;height:40px;border-radius:50%;background:var(--glass);border:1px solid var(--glass-line);display:grid;place-items:center}
+.avatar svg{width:24px;height:24px}
+.acct .row{display:flex;gap:6px}
+.acct .chip{padding:5px 10px;font-size:13px}
+.brand{font:700 15px var(--display);letter-spacing:.14em;text-transform:uppercase;text-shadow:0 1px 3px rgba(0,0,0,.5);margin-top:8px}
+.brand small{display:block;font:500 12px var(--body);letter-spacing:.02em;text-transform:none;opacity:.9}
+.mid{display:flex;align-items:center;justify-content:center;gap:clamp(40px,22vw,380px);flex-wrap:wrap;padding-bottom:6vh}
+.join{width:clamp(130px,17vw,180px);aspect-ratio:1;max-width:100%;border-radius:50%;border:none;background:var(--paper);color:var(--ink);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;
+  box-shadow:0 10px 30px rgba(0,0,0,.35),0 0 0 6px rgba(255,255,255,.25);transition:transform .15s ease,box-shadow .15s ease}
+.join:hover{transform:translateY(-3px) scale(1.03);box-shadow:0 14px 36px rgba(0,0,0,.4),0 0 0 8px rgba(241,193,43,.55)}
+.join .t{font:600 clamp(20px,2.2vw,26px)/1 var(--display);letter-spacing:.04em;text-align:center}
+.join .t b{display:block;font-weight:700;font-size:1.25em}
+.join svg{width:34px;height:34px}
+.join .lim{font:500 11px var(--body);color:#3d5468}
+.bottom{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.note{font:500 12px var(--body);text-shadow:0 1px 3px rgba(0,0,0,.6);opacity:.95;max-width:40ch;text-align:right}
+/* dialogs */
+.veil{position:fixed;inset:0;background:rgba(8,16,24,.55);display:grid;place-items:center;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));z-index:5}
+.card{background:var(--paper);color:var(--ink);border-radius:14px;width:min(400px,100%);padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.4);display:grid;gap:14px}
+.card h2{margin:0;font:700 26px var(--display);letter-spacing:.03em}
+.card p{margin:0;line-height:1.5;color:#334657}
+.card label{display:grid;gap:5px;font:600 13px var(--body)}
+.card input,.card select{font:15px var(--body);padding:9px 10px;border:1px solid #b9c6d2;border-radius:8px;color:var(--ink);background:#fff}
+.card .acts{display:flex;justify-content:flex-end;gap:8px}
+.btn{font:600 14px var(--body);border-radius:8px;padding:9px 14px;cursor:pointer;border:1px solid #b9c6d2;background:#fff;color:var(--ink)}
+.btn.pri{background:var(--ink);color:#fff;border-color:var(--ink)}
+.err{color:#b3261e;font-size:13px;min-height:1em}
+.check{display:flex!important;grid-template-columns:none;align-items:center;gap:8px;font-weight:500!important}
+@media (max-width:560px){ .mid{gap:28px;padding-bottom:0} .note{display:none} .brand small{display:none} }
+</style>
+
+<canvas id="scene" aria-hidden="true"></canvas>
+
+<div class="ui">
+  <div class="top">
+    <div>
+      <button class="chip" id="btnSettings" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        <span data-t="settings">Ayarlar</span>
+      </button>
+      <div class="brand">TWR SİM<small>LTAC · Ankara Esenboğa</small></div>
+    </div>
+    <div class="acct">
+      <div class="who"><span id="whoName" data-t="account">Hesap</span>
+        <span class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg></span></div>
+      <div class="row" id="acctBtns">
+        <button class="chip" id="btnSignUp" type="button" data-t="signup">Kayıt ol</button>
+        <button class="chip" id="btnSignIn" type="button" data-t="signin">Giriş yap</button>
+      </div>
+      <div class="row" id="acctOut" hidden><button class="chip" id="btnSignOut" type="button" data-t="signout">Çıkış yap</button></div>
+    </div>
+  </div>
+
+  <div class="mid">
+    <button class="join" id="joinAtc" type="button">
+      <span class="t"><span data-t="joinas">Join as</span><b>ATC</b></span>
+      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 5h14l-2 6H11z"/><path d="M11 11h10M13 11l-1 17h8l-1-17"/><path d="M10 28h12"/></svg>
+      <span class="lim" data-t="nolimit">Katılım sınırı yok</span>
+    </button>
+    <button class="join" id="joinPilot" type="button">
+      <span class="t"><span data-t="joinas">Join as</span><b>PILOT</b></span>
+      <svg viewBox="0 0 32 32" fill="currentColor"><path d="M30 14.5c0-1-1-1.6-2.2-1.6h-7.1L13.4 3h-3l3.9 9.9H7.6L5 9.5H2.6l1.6 6.5-1.6 6.5H5l2.6-3.4h6.7L10.4 29h3l7.3-9.9h7.1c1.2 0 2.2-.6 2.2-1.6z"/></svg>
+      <span class="lim" data-t="nolimit">Katılım sınırı yok</span>
+    </button>
+  </div>
+
+  <div class="bottom">
+    <button class="chip" id="btnLang" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>
+      <span data-t="language">Dil: Türkçe</span>
+    </button>
+    <div class="note" data-t="note">LTAC Esenboğa kule simülatörü. Bütün trafik gerçek kişiler tarafından uçurulur.</div>
+  </div>
+</div>
+
+<!-- dialogs -->
+<div class="veil" id="dlgSettings" hidden><form class="card" id="fSettings">
+  <h2 data-t="settings">Ayarlar</h2>
+  <label><span data-t="language2">Dil</span><select id="selLang"><option value="tr">Türkçe</option><option value="en">English</option></select></label>
+  <label class="check"><input type="checkbox" id="chkAnim"> <span data-t="anim">Arka plan animasyonu</span></label>
+  <div class="acts"><button class="btn pri" type="submit" data-t="close">Kapat</button></div>
+</form></div>
+
+<div class="veil" id="dlgAuth" hidden><form class="card" id="fAuth" novalidate>
+  <h2 id="authTitle">Kayıt ol</h2>
+  <label id="rowName"><span data-t="fullname">Ad Soyad</span><input id="inName" autocomplete="name"></label>
+  <label><span data-t="callsign">Kullanıcı adı</span><input id="inUser" autocomplete="username" placeholder="ör. omar"></label>
+  <p style="font-size:13px" data-t="localnote">Hesap şimdilik bu tarayıcıda tutulur. Çok oyunculu sunucu adımında gerçek hesaba geçecek.</p>
+  <div class="err" id="authErr"></div>
+  <div class="acts"><button class="btn" type="button" id="authCancel" data-t="cancel">Vazgeç</button><button class="btn pri" type="submit" id="authGo">Kayıt ol</button></div>
+</form></div>
+
+<div class="veil" id="dlgPilot" hidden><form class="card" id="fPilot">
+  <h2 data-t="pilotTitle">Pilot (Instructor)</h2>
+  <p data-t="pilotBody">Pilot her zaman instructor'dır: trafiği o yönetir, hava durumunu o ayarlar. Pilot ekranı bir sonraki adımda hazırlanacak.</p>
+  <div class="acts"><button class="btn pri" type="submit" data-t="ok">Tamam</button></div>
+</form></div>
+
+<script>
+// ---------- storage (per viewer, optional) ----------
+const store={ get(k,d){ try{ const v=localStorage.getItem('twrsim.'+k); return v===null?d:JSON.parse(v);}catch(e){return d;} },
+              set(k,v){ try{ localStorage.setItem('twrsim.'+k,JSON.stringify(v)); }catch(e){} } };
+
+// ---------- language ----------
+const T={
+ tr:{settings:'Ayarlar',account:'Hesap',signup:'Kayıt ol',signin:'Giriş yap',signout:'Çıkış yap',joinas:'Join as',nolimit:'Katılım sınırı yok',
+     language:'Dil: Türkçe',language2:'Dil',anim:'Arka plan animasyonu',close:'Kapat',fullname:'Ad Soyad',callsign:'Kullanıcı adı',
+     localnote:'Hesap şimdilik bu tarayıcıda tutulur. Çok oyunculu sunucu adımında gerçek hesaba geçecek.',cancel:'Vazgeç',ok:'Tamam',
+     pilotTitle:'Pilot (Instructor)',pilotBody:'Pilot her zaman instructor\'dır: trafiği o yönetir, hava durumunu o ayarlar. Pilot ekranı bir sonraki adımda hazırlanacak.',
+     note:'LTAC Esenboğa kule simülatörü. Bütün trafik gerçek kişiler tarafından uçurulur.',
+     errUser:'Kullanıcı adı girin.',errName:'Ad soyad girin.',errNo:'Bu kullanıcı adıyla kayıt yok. Önce kayıt olun.',errTaken:'Bu kullanıcı adı alınmış.'},
+ en:{settings:'Settings',account:'Account',signup:'Sign up',signin:'Sign in',signout:'Sign out',joinas:'Join as',nolimit:'No participant limit',
+     language:'Language: English',language2:'Language',anim:'Background animation',close:'Close',fullname:'Full name',callsign:'Username',
+     localnote:'Accounts are kept in this browser for now. They move to real accounts with the multiplayer server step.',cancel:'Cancel',ok:'OK',
+     pilotTitle:'Pilot (Instructor)',pilotBody:'The pilot is always the instructor: they run the traffic and set the weather. The pilot screen is the next step.',
+     note:'LTAC Esenboğa tower simulator. All traffic is flown by real people.',
+     errUser:'Enter a username.',errName:'Enter your full name.',errNo:'No account with this username. Sign up first.',errTaken:'This username is taken.'}
+};
+let lang=store.get('lang','tr');
+function tr(k){ return (T[lang]||T.tr)[k]||k; }
+function applyLang(){ document.documentElement.lang=lang;
+  document.querySelectorAll('[data-t]').forEach(el=>el.textContent=tr(el.dataset.t)); refreshAcct(); }
+
+// ---------- account (local) ----------
+let user=store.get('user',null);
+function refreshAcct(){ const s=!!user;
+  document.getElementById('whoName').textContent=s?user.name:tr('account');
+  document.getElementById('acctBtns').hidden=s; document.getElementById('acctOut').hidden=!s; }
+let authMode='up';
+function openAuth(mode){ authMode=mode; const up=mode==='up';
+  document.getElementById('authTitle').textContent=up?tr('signup'):tr('signin');
+  document.getElementById('authGo').textContent=up?tr('signup'):tr('signin');
+  document.getElementById('rowName').hidden=!up; document.getElementById('authErr').textContent='';
+  show('dlgAuth'); document.getElementById(up?'inName':'inUser').focus(); }
+document.getElementById('fAuth').addEventListener('submit',e=>{ e.preventDefault();
+  const name=document.getElementById('inName').value.trim(), u=document.getElementById('inUser').value.trim().toLowerCase();
+  const err=document.getElementById('authErr'); const acc=store.get('accounts',{});
+  if(authMode==='up'&&!name){ err.textContent=tr('errName'); return; }
+  if(!u){ err.textContent=tr('errUser'); return; }
+  if(authMode==='up'){ if(acc[u]){ err.textContent=tr('errTaken'); return; } acc[u]={name}; store.set('accounts',acc); }
+  else if(!acc[u]){ err.textContent=tr('errNo'); return; }
+  user={user:u,name:acc[u].name}; store.set('user',user); refreshAcct(); hide('dlgAuth'); });
+document.getElementById('authCancel').onclick=()=>hide('dlgAuth');
+document.getElementById('btnSignUp').onclick=()=>openAuth('up');
+document.getElementById('btnSignIn').onclick=()=>openAuth('in');
+document.getElementById('btnSignOut').onclick=()=>{ user=null; store.set('user',null); refreshAcct(); };
+
+// ---------- dialogs ----------
+function show(id){ document.getElementById(id).hidden=false; }
+function hide(id){ document.getElementById(id).hidden=true; }
+document.querySelectorAll('.veil').forEach(v=>v.addEventListener('click',e=>{ if(e.target===v) v.hidden=true; }));
+addEventListener('keydown',e=>{ if(e.key==='Escape') document.querySelectorAll('.veil').forEach(v=>v.hidden=true); });
+
+// settings
+let anim=store.get('anim',!matchMedia('(prefers-reduced-motion: reduce)').matches);
+document.getElementById('btnSettings').onclick=()=>{ document.getElementById('selLang').value=lang; document.getElementById('chkAnim').checked=anim; show('dlgSettings'); };
+document.getElementById('selLang').onchange=e=>{ lang=e.target.value; store.set('lang',lang); applyLang(); };
+document.getElementById('chkAnim').onchange=e=>{ anim=e.target.checked; store.set('anim',anim); };
+document.getElementById('fSettings').addEventListener('submit',e=>{ e.preventDefault(); hide('dlgSettings'); });
+document.getElementById('btnLang').onclick=()=>{ lang=lang==='tr'?'en':'tr'; store.set('lang',lang); applyLang(); };
+
+// join
+document.getElementById('joinAtc').onclick=()=>{ location.href='atc.html'; };
+document.getElementById('joinPilot').onclick=()=>{ location.href='pilot.html'; };
+document.getElementById('fPilot').addEventListener('submit',e=>{ e.preventDefault(); hide('dlgPilot'); });
+
+applyLang();
+
+// ---------- background: airliner landing (drawn, loops) ----------
+const cv=document.getElementById('scene'), g=cv.getContext('2d');
+let W=0,H=0,dpr=1;
+function size(){ dpr=Math.min(2,devicePixelRatio||1); W=innerWidth; H=innerHeight; cv.width=W*dpr; cv.height=H*dpr; g.setTransform(dpr,0,0,dpr,0,0); }
+addEventListener('resize',size); size();
+// deterministic noise for ridgelines and trees
+function rnd(i){ const x=Math.sin(i*127.1+311.7)*43758.5453; return x-Math.floor(x); }
+function ridge(y0,amp,seed,step){ const pts=[]; for(let x=-20;x<=W+20;x+=step){ const i=x/step; pts.push([x,y0-amp*(0.5*rnd(i+seed)+0.35*Math.sin(i*0.37+seed)+0.3*Math.sin(i*0.11+seed*2))]); } return pts; }
+function drawPlane(x,y,s,pitch,gear){
+  g.save(); g.translate(x,y); g.rotate(-pitch); g.scale(s,s);
+  // far wing + engine
+  g.fillStyle='#c9d0d8'; g.beginPath(); g.moveTo(-10,-2); g.lineTo(-48,-13); g.lineTo(-40,-13); g.lineTo(8,-3); g.closePath(); g.fill();
+  // fuselage
+  const fg=g.createLinearGradient(0,-14,0,14); fg.addColorStop(0,'#ffffff'); fg.addColorStop(.6,'#eef1f4'); fg.addColorStop(1,'#b8c1ca');
+  g.fillStyle=fg; g.beginPath(); g.moveTo(-118,-4); g.quadraticCurveTo(-120,-11,-100,-11); g.lineTo(100,-11);
+  g.bezierCurveTo(118,-11,128,-4,130,2); g.bezierCurveTo(126,8,112,10,100,10); g.lineTo(-80,10); g.quadraticCurveTo(-104,8,-118,-4); g.fill();
+  // belly line + windows
+  g.fillStyle='#8f9aa5'; g.fillRect(-80,6,180,1.2);
+  g.fillStyle='#4a5865'; for(let i=-86;i<96;i+=6.2) g.fillRect(i,-5.5,2.6,3);
+  g.fillStyle='#2c3a47'; g.beginPath(); g.moveTo(116,-7); g.lineTo(124,-4); g.lineTo(119,-3); g.lineTo(113,-5); g.closePath(); g.fill();
+  // tail fin + stabiliser
+  g.fillStyle='#e8ecf0'; g.beginPath(); g.moveTo(-96,-10); g.lineTo(-126,-50); g.lineTo(-114,-50); g.lineTo(-70,-10); g.closePath(); g.fill();
+  g.fillStyle='#1f4f7a'; g.beginPath(); g.moveTo(-104,-22); g.lineTo(-121,-46); g.lineTo(-114,-46); g.lineTo(-92,-22); g.closePath(); g.fill();
+  g.fillStyle='#d6dce2'; g.beginPath(); g.moveTo(-100,-3); g.lineTo(-132,-8); g.lineTo(-126,-2); g.lineTo(-96,1); g.closePath(); g.fill();
+  // near wing + engine
+  g.fillStyle='#dfe4e9'; g.beginPath(); g.moveTo(-20,2); g.lineTo(-58,14); g.lineTo(-48,15); g.lineTo(18,4); g.closePath(); g.fill();
+  const eg=g.createLinearGradient(0,4,0,18); eg.addColorStop(0,'#f4f6f8'); eg.addColorStop(1,'#a9b3bd');
+  g.fillStyle=eg; g.beginPath(); g.ellipse(-2,11,15,6.5,0,0,Math.PI*2); g.fill(); g.fillStyle='#39434d'; g.beginPath(); g.ellipse(13,11,2.2,5.5,0,0,Math.PI*2); g.fill();
+  if(gear>0){ g.fillStyle='#3a4047'; const L=13*gear;
+    g.fillRect(-38,9,2.4,L); g.fillRect(-28,9,2.4,L); g.fillRect(96,9,2,L*0.9);
+    g.fillStyle='#16191c'; [[-40,-30],[-30,-20]].forEach(([a,b])=>{ g.beginPath(); g.arc(a+1,9+L+2,3.2,0,7); g.arc(b+1,9+L+2,3.2,0,7); g.fill(); });
+    g.beginPath(); g.arc(97,9+L*0.9+2,2.8,0,7); g.fill(); }
+  g.restore();
+}
+const CYCLE=16; let t0=performance.now();
+function frame(now){
+  const t=anim?((now-t0)/1000)%CYCLE:9.2;
+  const hz=H*0.56, rwyTop=H*0.63;
+  // sky
+  const sg=g.createLinearGradient(0,0,0,hz); sg.addColorStop(0,'#5a88bd'); sg.addColorStop(.65,'#a9c3da'); sg.addColorStop(1,'#d9e3ea');
+  g.fillStyle=sg; g.fillRect(0,0,W,hz+2);
+  // thin cloud bands
+  g.fillStyle='rgba(255,255,255,.28)'; for(let i=0;i<4;i++){ const y=H*(0.12+i*0.07), x=((now/1000)*4*(i+1)+i*300)%(W+600)-300; g.beginPath(); g.ellipse(x,y,260+i*40,6+i,0,0,7); g.fill(); g.beginPath(); g.ellipse((x+W*0.55)%(W+600)-300,y+18,200,5,0,0,7); g.fill(); }
+  // mountains: far snowy, near blue
+  let p=ridge(hz-H*0.02,H*0.09,3,26); g.fillStyle='#8ea8c3'; g.beginPath(); g.moveTo(-20,hz); p.forEach(q=>g.lineTo(q[0],q[1])); g.lineTo(W+20,hz); g.fill();
+  g.fillStyle='rgba(255,255,255,.75)'; g.beginPath(); p.forEach((q,i)=>{ const yy=q[1]+H*0.012; i?g.lineTo(q[0],yy):g.moveTo(q[0],yy); }); for(let i=p.length-1;i>=0;i--) g.lineTo(p[i][0],p[i][1]); g.fill();
+  p=ridge(hz,H*0.045,11,18); g.fillStyle='#6f8aa6'; g.beginPath(); g.moveTo(-20,hz+2); p.forEach(q=>g.lineTo(q[0],q[1])); g.lineTo(W+20,hz+2); g.fill();
+  // tree line
+  g.fillStyle='#2f3d2c'; g.beginPath(); g.moveTo(0,hz+H*0.01); for(let x=0;x<=W;x+=7){ g.lineTo(x,hz-H*0.004-rnd(x)*H*0.022); } g.lineTo(W,hz+H*0.02); g.lineTo(0,hz+H*0.02); g.fill();
+  // grass and runway
+  const gg=g.createLinearGradient(0,hz,0,H); gg.addColorStop(0,'#7d7a52'); gg.addColorStop(.35,'#8e8058'); gg.addColorStop(1,'#6e6a4a');
+  g.fillStyle=gg; g.fillRect(0,hz+H*0.012,W,H);
+  g.fillStyle='#5a5c5c'; g.fillRect(0,rwyTop,W,H*0.035);
+  g.fillStyle='#ecece6'; for(let x=-((now/1000)*0)%60;x<W;x+=60) g.fillRect(x,rwyTop+H*0.016,30,2);
+  g.fillStyle='#9a8b5f'; g.fillRect(0,rwyTop+H*0.035,W,H*0.11);
+  const tg=g.createLinearGradient(0,H*0.78,0,H); tg.addColorStop(0,'#4d5152'); tg.addColorStop(1,'#3b3e40');
+  g.fillStyle=tg; g.fillRect(0,H*0.78,W,H*0.22);
+  g.strokeStyle='rgba(241,193,43,.8)'; g.lineWidth=3; g.beginPath(); g.moveTo(0,H*0.86); g.bezierCurveTo(W*0.3,H*0.85,W*0.6,H*0.90,W,H*0.88); g.stroke();
+  // aircraft: approach from left, flare, touchdown at ~9 s, roll out to the right
+  const s=Math.max(0.75,Math.min(1.7,W/700)), groundY=rwyTop+H*0.0175-26*s;
+  const td=9, xs=-200*s, xtd=W*0.42, xe=W+260*s;
+  let x,y,pitch,gear=1;
+  if(t<td){ const k=t/td; x=xs+(xtd-xs)*k; const e=1-Math.pow(1-k,1.6); y=H*0.18+(groundY-H*0.18)*e; pitch=0.05*(1-k)+0.07*k; }
+  else { const k=(t-td)/(CYCLE-td); x=xtd+(xe-xtd)*(1-Math.pow(1-k,1.6))*0.95+(xe-xtd)*0.05*k; y=groundY; pitch=Math.max(0,0.07*(1-k*4)); }
+  g.fillStyle='rgba(0,0,0,.18)'; g.beginPath(); g.ellipse(x,rwyTop+H*0.02,120*s,4*s,0,0,7); g.fill();
+  drawPlane(x,y,s,pitch,gear);
+  if(anim) requestAnimationFrame(frame); else setTimeout(()=>requestAnimationFrame(frame),500);
+}
+requestAnimationFrame(frame);
+</script>
+
+</body>
+</html>

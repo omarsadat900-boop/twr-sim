@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LTAC Pilot İstasyonu</title>
+<style>
+  :root{ --bg:#0f151c; --panel:#16202b; --panel2:#1d2a38; --line:#2c3c4d; --txt:#e6edf3; --muted:#8fa1b3;
+         --acc:#ff8a1f; --ok:#1f9d48; --busy:#d9262b; --paper:#f4f5f2; --ink:#111;
+         --map:#3a3d40; --pave:#6b6e70; --rwy:#26292b; --route:#ff4fa3; --hp:#7dff6a; --tdz:#ff9a1f; --tgt:#9cff5a; }
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  button{font:inherit;color:inherit}
+  #app{display:grid;grid-template-columns:262px 1fr 300px;height:100%}
+  /* left: menus + strip bay */
+  #left{display:flex;flex-direction:column;min-height:0;background:var(--panel);border-right:1px solid var(--line)}
+  .menus{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--line);position:relative}
+  .ib{width:38px;height:34px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);display:grid;place-items:center;cursor:pointer}
+  .ib:hover{background:#26384a} .ib svg{width:20px;height:20px}
+  .drop{position:absolute;top:44px;left:8px;z-index:20;background:#0c1218;border:1px solid var(--line);border-radius:8px;padding:4px;min-width:190px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  .drop button{display:block;width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:14px}
+  .drop button:hover{background:#1e2c3a}
+  .drop .dis{opacity:.45;pointer-events:none}
+  .bayh{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.08em;color:var(--muted);background:#121a23;border-bottom:1px solid var(--line)}
+  #strips{flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:5px}
+  .strip{display:grid;grid-template-columns:6px 1fr 34px;background:#22303e;border:1px solid #33475a;border-radius:3px;cursor:pointer;font:12px ui-monospace,Menlo,monospace;min-height:54px}
+  .strip.sel{outline:2px solid #e0245e;outline-offset:-1px}
+  .strip .bar{border-radius:3px 0 0 3px}
+  .strip.dep .bar{background:#2fbf4f} .strip.arr .bar{background:#f2c230} .strip.ovf .bar{background:#58a6ff} .strip.veh .bar{background:#c9ced3}
+  .strip .body{padding:4px 6px;display:grid;grid-template-columns:1fr auto;gap:1px 8px;min-width:0}
+  .strip .cs{font-weight:800;font-size:14px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .strip .r{text-align:right;color:#cfe3f5}
+  .strip .m{color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .strip .st{display:grid;place-items:center;background:#b8202a;border-radius:0 3px 3px 0}
+  .strip .st svg{width:20px;height:20px}
+  .strip .st.air{background:#1f6fb2} .strip .st.gnd{background:#2b7a3d} .strip .st.veh{background:#55606b}
+  .empty{color:var(--muted);font-size:12px;padding:10px;line-height:1.4}
+  /* center: map + awos */
+  #center{display:grid;grid-template-rows:1fr auto;min-width:0;min-height:0}
+  #mapwrap{position:relative;min-height:0;background:var(--map)}
+  #map{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+  #map.pick{cursor:crosshair}
+  .ov{position:absolute;z-index:3}
+  #freq{top:10px;right:10px;display:flex;align-items:stretch;border:1px solid #111;border-radius:4px;overflow:hidden;font:700 14px ui-monospace,Menlo,monospace;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+  #freq .f{background:#f4f4f0;color:#111;padding:5px 9px}
+  #freq .s{background:var(--ok);color:#fff;padding:5px 9px;min-width:92px;text-align:center}
+  #freq .s.busy{background:var(--busy)} #freq .s.tx{background:#e08a00}
+  #freq .pb{border:0;border-left:1px solid #111;background:#1d2a38;color:#fff;padding:0 10px;font:700 12px ui-monospace,Menlo,monospace;cursor:pointer}
+  #freq .pb.on{background:#e08a00} #freq .pb.busy{background:var(--busy)}
+  #peers{border-top:1px solid var(--line);max-height:34%;overflow-y:auto;padding:6px}
+  #peers .who{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-bottom:5px;font-size:13px}
+  #peers .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+  #peers .tag{font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+  #peers .adm{display:flex;gap:4px;width:100%} #peers .adm button{flex:1;font-size:11px;padding:3px;border-radius:4px;border:1px solid var(--line);background:var(--panel);cursor:pointer}
+  #scale{left:10px;bottom:10px;font:12px ui-monospace,Menlo,monospace;color:#dfe6ec;background:rgba(0,0,0,.35);padding:3px 7px;border-radius:4px}
+  #mode{left:50%;top:10px;transform:translateX(-50%);background:#0c1218ee;border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;gap:8px;align-items:center;font-size:13px;max-width:calc(100% - 260px)}
+  #mode button{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+  #mode button.go{background:var(--ok);border-color:var(--ok);color:#fff}
+  #toast{left:50%;bottom:14px;transform:translateX(-50%);background:#0c1218ee;border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:13px;pointer-events:none;transition:opacity .3s}
+  #clock{left:10px;top:10px;font:700 16px ui-monospace,Menlo,monospace;background:rgba(0,0,0,.4);padding:4px 8px;border-radius:4px}
+  /* awos (bottom) */
+  #awos{background:#eceeea;color:var(--ink);padding:8px 10px 10px;border-top:2px solid #000}
+  #awhd{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+  #awhd h2{margin:0;font:700 14px "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:.04em}
+  #awhd .note{font-size:12px;color:#555}
+  #awclock{font:700 16px ui-monospace,Menlo,monospace;margin-left:auto}
+  .seg{display:inline-flex;border:1px solid #9aa;border-radius:6px;overflow:hidden}
+  .seg button{border:0;background:#fff;padding:4px 10px;font-size:12px;cursor:pointer;color:#111}
+  .seg button.on{background:#d9481c;color:#fff}
+  .wxin{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px;font-size:12px}
+  .wxin label{display:grid;gap:3px;font-weight:600;color:#333}
+  .wxin label small{font-weight:400;color:#666}
+  .wxin input,.wxin select{width:100%;min-width:0;font:14px ui-monospace,Menlo,monospace;padding:4px 6px;border:1px solid #aab;border-radius:4px;background:#fff;color:#111}
+  .wxin .pair{display:grid;grid-template-columns:1fr auto 1fr;gap:3px;align-items:center}
+  .wxin .full{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .wxin .full button{font-size:13px;padding:6px 12px;border:1px solid #889;border-radius:4px;background:#fff;color:#111;cursor:pointer}
+  .wxin .full button.on{background:#244c7a;color:#fff;border-color:#244c7a}
+  .wxin .full button.warn{background:#b8202a;color:#fff;border-color:#b8202a}
+  .wxin .full select{width:auto}
+  .wxin .calc{font:12px ui-monospace,Menlo,monospace;color:#244c7a;margin-left:auto}
+  .wxin.ro input,.wxin.ro select{background:#e6e6e6;pointer-events:none}
+  /* right: FMS */
+  #right{background:#0d1319;border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+  .fmsh{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;font:800 13px ui-monospace,Menlo,monospace;color:#cfd8e0;background:#1a242e}
+  .fms{margin:6px;background:#0d3b4a;border:2px solid #4fa0b8;border-radius:3px;padding:6px;font:12px ui-monospace,Menlo,monospace}
+  .fms .r1{display:flex;gap:4px;align-items:center}
+  .fms .box{background:#17262f;border:1px solid #4d6b7a;padding:2px 6px;min-width:24px;text-align:center}
+  .fms .tg{cursor:pointer} .fms .tg.on{background:#e9eef2;color:#0d3b4a;font-weight:800}
+  .fms .cs{font:800 24px ui-monospace,Menlo,monospace;letter-spacing:.03em;margin:4px 0;color:#fff}
+  .fms .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-top:4px}
+  .fms select{font:12px ui-monospace,Menlo,monospace;background:#17262f;color:#fff;border:1px solid #4d6b7a;padding:1px}
+  .fms .st{margin-top:5px;background:#1f6d2e;color:#eaffea;padding:3px 6px;font-weight:700}
+  .fms .none{color:#9fb6c2;font-size:13px;padding:14px 4px}
+  .vfr{margin:0 6px 6px;background:#132029;border:1px solid #33505e;border-radius:3px;padding:6px;font-size:12px;display:grid;grid-template-columns:auto 1fr;gap:4px 6px;align-items:center}
+  .vfr select{font:12px system-ui;background:#0d1319;color:#fff;border:1px solid #33505e;padding:2px}
+  .vfr button{grid-column:1/-1;background:#2a6b3a;border:0;border-radius:4px;padding:5px;color:#fff;cursor:pointer}
+  #icons{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin:0 6px 6px;background:#1b2935;padding:5px;border-radius:3px}
+  .ic{aspect-ratio:1;border:2px solid #8aa3b8;border-radius:3px;padding:0;cursor:pointer;background:#2a5f9e;position:relative}
+  .ic svg{width:100%;height:100%;display:block}
+  .ic:hover{border-color:#fff} .ic:disabled{opacity:.35;cursor:default}
+  .ic:focus-visible{outline:2px solid var(--acc)}
+  #icname{margin:0 6px 6px;font-size:12px;color:var(--muted);min-height:16px}
+  #pfd{display:block;margin:0 6px 6px;width:calc(100% - 12px);height:auto;background:#000;border-radius:3px}
+  .xpdr{margin:0 6px 8px;display:grid;grid-template-columns:auto 1fr;gap:6px}
+  .xpdr .code{background:#000;color:#7dff6a;font:800 18px ui-monospace,Menlo,monospace;padding:4px 8px;border:1px solid #333}
+  .xpdr .btns{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+  .xpdr button{background:#2a3138;border:1px solid #4b555e;border-radius:3px;font-size:11px;padding:3px;cursor:pointer}
+  .xpdr button.on{background:#d9d9d9;color:#111}
+  /* dialogs */
+  .veil{position:fixed;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;z-index:50;padding:16px}
+  .veil[hidden]{display:none}
+  .dlg{background:#f4f5f2;color:#111;border-radius:10px;width:min(760px,100%);max-height:100%;overflow:auto;padding:16px 18px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .dlg h3{margin:0 0 10px;font-size:18px}
+  .dlg h4{margin:14px 0 6px;font-size:14px;border-bottom:1px solid #ccc;padding-bottom:3px}
+  .fgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .fgrid label{display:grid;gap:3px;font-size:12px;font-weight:600}
+  .fgrid input,.fgrid select{font:13px ui-monospace,Menlo,monospace;padding:5px;border:1px solid #aab;border-radius:4px;background:#fff;color:#111;min-width:0}
+  .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+  .btn{border:1px solid #889;background:#fff;border-radius:6px;padding:7px 12px;cursor:pointer;color:#111}
+  .btn.pri{background:#173a5e;color:#fff;border-color:#173a5e}
+  .hint{font-size:12px;color:#555;margin-top:6px;line-height:1.4}
+  .err{color:#b3261e;font-size:13px;min-height:1em;margin-top:6px}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- LEFT -->
+  <aside id="left">
+    <div class="menus">
+      <button class="ib" id="mMain" title="Menü" aria-label="Menü"><svg viewBox="0 0 24 24" fill="none" stroke="#e6edf3" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M8 9h8M8 12h8M8 15h8"/></svg></button>
+      <button class="ib" id="mAc" title="Uçak menüsü" aria-label="Uçak menüsü"><svg viewBox="0 0 24 24" fill="#e6edf3"><path d="M21 12.6c0-.7-.7-1.1-1.5-1.1h-4.9L9.5 4.5H7.4l2.7 7H5.3L3.5 9.1H1.8L3 13.6l-1.2 4.5h1.7l1.8-2.4h4.8l-2.7 7h2.1l5.1-7h4.9c.8 0 1.5-.4 1.5-1.1z" transform="rotate(-45 12 12)"/></svg></button>
+      <div class="drop" id="dMain" hidden>
+        <button data-open="add">Add aircraft</button>
+        <button data-open="wx">Change weather</button>
+        <button data-open="veh">Add vehicle</button>
+      </div>
+      <div class="drop" id="dAc" hidden>
+        <button data-acm="hdg">Arrange heading</button>
+        <button data-acm="spd">IAS / TAS</button>
+        <button data-acm="cs">Callsign</button>
+        <button data-acm="alt">Altitude</button>
+        <button data-acm="del" style="color:#ff8a8a">Uçağı kaldır</button>
+      </div>
+    </div>
+    <div class="bayh"><span>ELECTRONIC STRIP BAY</span><span id="nStr">0</span></div>
+    <div id="strips"></div>
+    <div class="bayh"><span>KATILIMCILAR</span><span id="nWho">1</span></div>
+    <div id="peers"><div class="empty" style="padding:4px">Sunucu linkinden girildiğinde burada görünür.</div></div>
+  </aside>
+
+  <!-- CENTER -->
+  <main id="center">
+    <div id="mapwrap">
+      <canvas id="map"></canvas>
+      <div class="ov" id="clock">--:--:-- UTC</div>
+      <div class="ov" id="freq"><span class="f">120.6</span><span class="s" id="fstate">AVAILABLE</span><button class="pb" id="pPtt" title="PTT (Space)">PTT</button><button class="pb" id="pTel" title="Telefon (B)">TEL</button></div>
+      <div class="ov" id="mode" hidden></div>
+      <div class="ov" id="scale"></div>
+      <div class="ov" id="toast" style="opacity:0"></div>
+    </div>
+    <section id="awos">
+      <div id="awhd"><h2>HAVA DURUMU</h2><span class="seg" id="wxMode"><button data-m="manual" class="on">Manual</button><button data-m="auto">Automatic</button></span>
+        <span class="note">Buradan değiştirdiğin her şey ATC'nin AWOS ekranına gider.</span><span id="awclock">--:--:--</span></div>
+      <div class="wxin" id="wxin"></div>
+    </section>
+  </main>
+
+  <!-- RIGHT -->
+  <aside id="right">
+    <div class="fmsh"><span>FMS</span><span id="simT" style="font-weight:600;color:var(--muted)"></span></div>
+    <div class="fms" id="fms"><div class="none">Bir uçak seç (strip veya harita).</div></div>
+    <div class="vfr" id="vfr" hidden>
+      <span>Rwy</span><select id="vRwy"></select>
+      <span>Pos</span><select id="vPos"><option value="downwind">Downwind</option><option value="base">Base leg</option><option value="final">Final</option><option value="touchdown">Touchdown</option></select>
+      <span>Tur</span><select id="vHand"><option value="L">Left hand</option><option value="R">Right hand</option></select>
+      <button id="vGo">VFR katıl</button>
+    </div>
+    <div id="icons"></div>
+    <div id="icname"></div>
+    <canvas id="pfd" width="288" height="210"></canvas>
+    <div class="xpdr"><div class="code" id="xCode">----</div>
+      <div class="btns"><button data-x="STBY">STBY</button><button data-x="ALT">ALT</button><button data-x="IDENT">IDENT</button></div></div>
+  </aside>
+</div>
+
+<!-- ADD dialog (aircraft / vehicle / weather in one sheet, like the sketch) -->
+<div class="veil" id="dlgAdd" hidden><div class="dlg" role="dialog" aria-labelledby="addT">
+  <h3 id="addT">Add Aircraft</h3>
+  <section id="secAc">
+    <div class="fgrid">
+      <label>Callsign<input id="aCs" placeholder="THY7TK"></label>
+      <label>Type<select id="aType"></select></label>
+      <label>Airline<select id="aAl"></select></label>
+      <label>ADEP<input id="aDep" placeholder="LTAC"></label>
+      <label>ADES<input id="aDes" placeholder="LTFM"></label>
+      <label>LON<input id="aLon"></label>
+      <label>LAT<input id="aLat"></label>
+      <label>WPT<input id="aWpt"></label>
+      <label>SSR<input id="aSsr" placeholder="otomatik"></label>
+      <label>SID<input id="aSid"></label>
+      <label>HDG<input id="aHdg" type="number" min="0" max="360" value="036"></label>
+      <label>Altitude (ft)<input id="aAlt" type="number" step="100" value="3125"></label>
+      <label>Speed (kt)<input id="aSpd" type="number" value="0"></label>
+      <label>Kural<select id="aRules"><option value="I">IFR</option><option value="V">VFR</option></select></label>
+      <label>Park yeri<select id="aStand"><option value="">— yok —</option></select></label>
+    </div>
+    <div class="hint">Konumu üç yoldan verebilirsin: LAT/LON yaz, "Haritadan seç" ile tıkla ya da bir park yeri seç (yerde, motorlar kapalı başlar). Havadaki uçak için irtifa ve hız gir.</div>
+    <div class="err" id="aErr"></div>
+    <div class="acts"><button class="btn" id="aPick">Haritadan seç</button><button class="btn pri" id="aGo">Uçağı ekle</button></div>
+  </section>
+  <section id="secVeh">
+    <h4>Create Ground Vehicle</h4>
+    <div class="fgrid">
+      <label>Type<select id="vType"><option>Ambulance</option><option>Fire truck</option><option>Follow-me</option><option>Pushback tug</option><option>Fuel truck</option><option>Bus</option><option>Maintenance</option><option>Bird control</option></select></label>
+      <label>Callsign<input id="vCs" placeholder="FOLLOW 1"></label>
+      <label>Heading<input id="vHdg" type="number" value="0"></label>
+      <label>LON<input id="vLon"></label>
+      <label>LAT<input id="vLat"></label>
+    </div>
+    <div class="err" id="vErr"></div>
+    <div class="acts"><button class="btn" id="vPick">Haritadan seç</button><button class="btn pri" id="vAdd">Aracı ekle</button></div>
+  </section>
+  <section id="secWx">
+    <h4>Wind / Weather</h4>
+    <div class="hint">Hava durumu aşağıdaki AWOS panelinden de değiştirilir. Buradaki ayarlar aynı yere yazılır.</div>
+    <div class="acts"><button class="btn pri" id="wxGoto">AWOS paneline git</button></div>
+  </section>
+  <div class="acts"><button class="btn" id="addClose">Kapat</button></div>
+</div></div>
+
+<!-- aircraft menu dialog -->
+<div class="veil" id="dlgAcm" hidden><div class="dlg" style="width:min(380px,100%)">
+  <h3 id="acmT">Arrange heading</h3>
+  <div class="fgrid" style="grid-template-columns:1fr" id="acmBody"></div>
+  <div class="err" id="acmErr"></div>
+  <div class="acts"><button class="btn" id="acmX">Vazgeç</button><button class="btn pri" id="acmGo">Uygula</button></div>
+</div></div>
+
+<script>
+const DATA = __DATA__;
+const GEO = __GEO__;
+</script>
+<script>
+/*__WX__*/
+/*__NET__*/
+</script>
+<script>
+"use strict";
+// ======================================================================
+//  constants & geometry
+// ======================================================================
+const NM=1852, FT=0.3048, KT=0.514444, D2R=Math.PI/180;
+const ELEV=DATA.elev_ft;
+const O=DATA.origin, KX=Math.cos(O.lat*D2R)*111320, KY=111132.92-559.82*Math.cos(2*O.lat*D2R)+1.175*Math.cos(4*O.lat*D2R);
+const g2l=(lat,lon)=>[(lon-O.lon)*KX,(lat-O.lat)*KY];
+const l2g=(x,y)=>[O.lat+y/KY,O.lon+x/KX];
+const norm360=a=>((a%360)+360)%360, norm180=a=>{a=norm360(a);return a>180?a-360:a;};
+const brg=(a,b)=>norm360(Math.atan2(b[0]-a[0],b[1]-a[1])/D2R);
+const dist=(a,b)=>Math.hypot(b[0]-a[0],b[1]-a[1]);
+const hv=h=>[Math.sin(h*D2R),Math.cos(h*D2R)];
+const pad3=v=>String(Math.round(norm360(v))||360).padStart(3,'0');
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+// runway ends
+const RW={};
+DATA.runways.forEach(r=>{ const a=r.thr[r.ends[0]].xy, b=r.thr[r.ends[1]].xy, L=dist(a,b);
+  r.ends.forEach((e,i)=>{ const t=i?b:a, o=i?a:b, u=[(o[0]-t[0])/L,(o[1]-t[1])/L];
+    RW[e]={end:e, rwy:r.id, thr:t, opp:o, u, len:L, qfu:brg(t,o), elev:r.elev_ft[i], width:r.width}; }); });
+const ENDS=Object.keys(RW).sort();
+const ARP=[(RW['03R'].thr[0]+RW['21L'].thr[0]+RW['03L'].thr[0]+RW['21R'].thr[0])/4,(RW['03R'].thr[1]+RW['21L'].thr[1]+RW['03L'].thr[1]+RW['21R'].thr[1])/4];
+
+// ---------- taxi graph (route points) ----------
+const NODES=DATA.taxi.nodes.map(n=>({id:n.id,x:n.x,y:n.y,thr:n.thr||null}));
+const EDGES=DATA.taxi.edges.map(e=>({a:e.a,b:e.b,name:e.name,kind:e.kind,pts:e.pts.map(p=>p.slice())}));
+const plen=p=>{let s=0;for(let i=1;i<p.length;i++)s+=dist(p[i-1],p[i]);return s;};
+EDGES.forEach(e=>e.len=plen(e.pts));
+// stands -> their node
+const STANDS={};
+DATA.stands.forEach(s=>{ let best=null,bd=1e9; NODES.forEach(n=>{const d=dist([n.x,n.y],s.xy); if(d<bd){bd=d;best=n;}});
+  if(best&&bd<4){ best.stand=s.id; STANDS[s.id]={...s,node:best.id}; } });
+// holding points become nodes (split the taxiway they sit on)
+function projSeg(p,a,b){ const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1; const t=clamp(((p[0]-a[0])*dx+(p[1]-a[1])*dy)/L2,0,1); return [[a[0]+t*dx,a[1]+t*dy],t]; }
+DATA.holding_points.forEach(hp=>{
+  let best=null;
+  EDGES.forEach((e,ei)=>{ if(e.kind==='runway'||e.kind==='leadin') return;
+    for(let k=0;k<e.pts.length-1;k++){ const [q]=projSeg(hp.xy,e.pts[k],e.pts[k+1]); const d=dist(q,hp.xy); if(!best||d<best.d) best={d,ei,k,q}; } });
+  if(!best||best.d>25) return;
+  const e=EDGES[best.ei], id=NODES.length;
+  if(dist(best.q,e.pts[0])<3||dist(best.q,e.pts[e.pts.length-1])<3) return;
+  NODES.push({id,x:best.q[0],y:best.q[1],hp:hp.id,hpType:hp.type,hpRwy:hp.rwy});
+  const p1=e.pts.slice(0,best.k+1).concat([best.q]), p2=[best.q].concat(e.pts.slice(best.k+1));
+  EDGES.push({a:id,b:e.b,name:e.name,kind:e.kind,pts:p2,len:plen(p2)});
+  e.b=id; e.pts=p1; e.len=plen(p1);
+});
+const ADJ=NODES.map(()=>[]);
+EDGES.forEach((e,i)=>{ ADJ[e.a].push({e:i,o:e.b}); ADJ[e.b].push({e:i,o:e.a}); });
+const onRunway=n=>ADJ[n].some(x=>EDGES[x.e].kind==='runway');
+function dijkstra(src,dst,veh){
+  const N=NODES.length, D=new Float64Array(N).fill(Infinity), P=new Int32Array(N).fill(-1), PE=new Int32Array(N).fill(-1), done=new Uint8Array(N);
+  D[src]=0;
+  for(;;){ let u=-1,bd=Infinity; for(let i=0;i<N;i++) if(!done[i]&&D[i]<bd){bd=D[i];u=i;} if(u<0||u===dst) break; done[u]=1;
+    for(const {e,o} of ADJ[u]){ const E=EDGES[e]; let w=E.len;
+      if(E.kind==='runway') w*=6;                         // only cross/backtrack a runway when picked
+      if(E.kind==='leadin' && NODES[o].stand && o!==dst) w+=1e6;   // never route through a stand
+      if(D[u]+w<D[o]){D[o]=D[u]+w;P[o]=u;PE[o]=e;} } }
+  if(D[dst]===Infinity) return null;
+  const seq=[]; for(let v=dst;v!==src;v=P[v]) seq.unshift({e:PE[v],from:P[v],to:v});
+  const pts=[[NODES[src].x,NODES[src].y]];
+  seq.forEach(s=>{ const E=EDGES[s.e]; const p=E.a===s.from?E.pts:E.pts.slice().reverse(); p.slice(1).forEach(q=>pts.push(q.slice())); });
+  return {pts,names:[...new Set(seq.map(s=>EDGES[s.e].kind==='leadin'?null:EDGES[s.e].name).filter(Boolean))]};
+}
+function nearestNode(p,filter){ let b=-1,bd=1e9; NODES.forEach(n=>{ if(filter&&!filter(n)) return; const d=dist(p,[n.x,n.y]); if(d<bd){bd=d;b=n.id;} }); return [b,bd]; }
+
+// ======================================================================
+//  aircraft types / airlines (temporary list until Omar sends the real one)
+// ======================================================================
+const TYPES={ // vr / vapp kt, climb fpm, wake
+  A320:{vr:142,vapp:135,clb:2200,w:'M'}, A321:{vr:148,vapp:140,clb:2000,w:'M'}, B738:{vr:150,vapp:142,clb:2200,w:'M'},
+  B739:{vr:152,vapp:145,clb:2000,w:'M'}, A333:{vr:155,vapp:140,clb:1800,w:'H'}, B77W:{vr:165,vapp:150,clb:1800,w:'H'},
+  AT72:{vr:110,vapp:110,clb:1300,w:'M'}, C172:{vr:55,vapp:65,clb:700,w:'L'}, DA42:{vr:70,vapp:80,clb:1000,w:'L'} };
+const AIRLINES=['THY','PGT','AJA','SXS','KKK','TKJ','—'];
+function airlineOf(cs){ const p=cs.slice(0,3).toUpperCase(); return AIRLINES.includes(p)?p:'—'; }
+const APT={}; GEO.airports.forEach(a=>APT[a.c]=a);
+
+// ======================================================================
+//  traffic state
+// ======================================================================
+const TR=[]; let SEL=null, nextSsr=4601;
+const isAir=a=>a.kind==='ac'&&a.air;
+function ssrNext(){ let s; do{ s=String(nextSsr++).padStart(4,'0'); }while(/[89]/.test(s)); return s; }
+function addAircraft(o){
+  const t=TYPES[o.type]||TYPES.A320;
+  const a={ kind:'ac', id:'A'+Math.random().toString(36).slice(2,8), cs:o.cs.toUpperCase(), type:o.type, airline:o.airline||airlineOf(o.cs),
+    adep:(o.adep||'').toUpperCase(), ades:(o.ades||'').toUpperCase(), wpt:o.wpt||'', sid:o.sid||'', rules:o.rules||'I',
+    ssr:o.ssr||ssrNext(), xpdr:'ALT', ident:0, rwy:o.rwy||activeRwy, pos:o.pos.slice(), hdg:norm360(o.hdg||0),
+    alt:Math.max(ELEV,o.alt||ELEV), ias:o.spd||0, vs:0, turn:0, perf:t,
+    air:(o.alt||ELEV)>ELEV+50 && (o.spd||0)>40, mode:'parked', nav:'hdg', tgt:{hdg:norm360(o.hdg||0),alt:Math.max(ELEV,o.alt||ELEV),spd:o.spd||0},
+    ldg:false, path:null, stand:o.stand||null, status:'' };
+  if(a.air){ a.mode='air'; a.status='Uçuşta'; } else if(a.stand){ a.mode='parked'; a.status='Park'; a.ias=0; } else { a.mode='stopped'; a.ias=0; a.status='Yerde'; }
+  TR.push(a); select(a); renderStrips(); return a;
+}
+function addVehicle(o){
+  const v={ kind:'veh', id:'V'+Math.random().toString(36).slice(2,8), cs:o.cs.toUpperCase(), type:o.type, pos:o.pos.slice(), hdg:norm360(o.hdg||0),
+    alt:ELEV, ias:0, vs:0, mode:'stopped', air:false, path:null, status:'Bekliyor' };
+  TR.push(v); select(v); renderStrips(); return v;
+}
+
+// ======================================================================
+//  ground movement along a path
+// ======================================================================
+function startPath(a,pts,o){
+  if(pts.length<2) return;
+  const cum=[0]; for(let i=1;i<pts.length;i++) cum.push(cum[i-1]+dist(pts[i-1],pts[i]));
+  a.path={pts,cum,s:0,spd:o.spd,back:!!o.back,onEnd:o.onEnd,arg:o.arg};
+  a.mode=o.mode; a.status=o.status||a.status;
+}
+function pathPos(P,s){ let i=1; while(i<P.cum.length-1&&P.cum[i]<s) i++; const a=P.pts[i-1],b=P.pts[i],L=P.cum[i]-P.cum[i-1]||1,t=clamp((s-P.cum[i-1])/L,0,1); return [[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t],brg(a,b)]; }
+function stepPath(a,dt){
+  const P=a.path, rem=P.cum[P.cum.length-1]-P.s;
+  // look ahead for turns to slow down
+  const [,h1]=pathPos(P,Math.min(P.s+1,P.cum.at(-1))), [,h2]=pathPos(P,Math.min(P.s+60,P.cum.at(-1)));
+  const turn=Math.abs(norm180(h2-h1));
+  let tgt=P.spd; if(turn>35) tgt=Math.min(tgt,P.back?P.spd:10); tgt=Math.min(tgt,Math.sqrt(2*1.2*Math.max(0,rem))/KT+1);
+  a.ias+=clamp(tgt-a.ias,-2*dt,1.5*dt);
+  if(a.ias<0.3&&rem<1.5){ endPath(a); return; }
+  P.s=Math.min(P.cum.at(-1),P.s+a.ias*KT*dt);
+  const [p,h]=pathPos(P,P.s); a.pos=p;
+  const want=P.back?norm360(h+180):h; a.hdg=norm360(a.hdg+clamp(norm180(want-a.hdg),-25*dt,25*dt));
+  if(P.s>=P.cum.at(-1)-0.2) endPath(a);
+}
+function endPath(a){
+  const P=a.path; a.path=null; a.ias=0;
+  if(P.onEnd==='park'){ const s=STANDS[P.arg]; a.hdg=s.hdg; a.pos=s.xy.slice(); a.mode='parked'; a.stand=s.id; a.status='Park '+s.id; toast(`${a.cs} park etti: ${s.id}`); }
+  else if(P.onEnd==='lined'){ a.hdg=RW[P.arg].qfu; a.mode='lined'; a.status='Pistte, hazır '+P.arg; }
+  else if(P.onEnd==='pushed'){ a.mode='stopped'; a.status='Pushback tamam'; }
+  else if(P.onEnd==='vacated'){ a.mode='stopped'; a.status='Pisti terk etti'; toast(`${a.cs} pisti terk etti, taksi talimatı bekliyor`); }
+  else { a.mode='stopped'; a.status=a.kind==='veh'?'Bekliyor':'Taksi bitti'; }
+  renderStrips(); renderFMS();
+}
+
+// ======================================================================
+//  flight model
+// ======================================================================
+function windAt(){ return WX.cur; }
+function stepAir(a,dt){
+  nav(a,dt);
+  // heading
+  const d=norm180(a.tgt.hdg-a.hdg), rate=(a.perf.w==='L'?4:3);
+  let turn=a.forceTurn? a.forceTurn*rate : clamp(d,-rate,rate)/1;
+  turn=clamp(turn,-rate,rate); a.turn=turn; a.hdg=norm360(a.hdg+turn*dt);
+  // altitude
+  if(a.glide!=null){ const want=a.glide; const need=(want-a.alt)/dt*60; a.vs=clamp(need,-2500,a.vs>0?0:0); if(a.alt<want) a.vs=0; }
+  else { const da=a.tgt.alt-a.alt; a.vs=clamp(da*4,-1800,a.perf.clb); if(Math.abs(da)<5) a.vs=0; }
+  a.alt+=a.vs/60*dt;
+  // speed
+  a.ias+=clamp(a.tgt.spd-a.ias,-1.2*dt,1.5*dt);
+  const tas=a.ias*(1+0.02*(a.alt/1000)), w=windAt(), wv=hv(w.dir+180), v=hv(a.hdg);
+  a.pos=[a.pos[0]+(v[0]*tas+wv[0]*w.spd)*KT*dt, a.pos[1]+(v[1]*tas+wv[1]*w.spd)*KT*dt];
+  a.gs=Math.hypot(v[0]*tas+wv[0]*w.spd, v[1]*tas+wv[1]*w.spd);
+}
+function steerTo(a,p){ a.tgt.hdg=brg(a.pos,p); return dist(a.pos,p); }
+function rwyFrame(a,E){ const R=RW[E], v=[a.pos[0]-R.thr[0],a.pos[1]-R.thr[1]]; const along=-(v[0]*R.u[0]+v[1]*R.u[1]); const xt=v[0]*R.u[1]-v[1]*R.u[0]; return {R,along,xt}; }
+function nav(a,dt){
+  a.glide=null; a.forceTurn=0;
+  switch(a.nav){
+    case 'hdg': break;
+    case 'orbit': { a.forceTurn=a.orbit.dir; a.orbit.left-=Math.abs(a.turn||3)*dt; a.tgt.hdg=norm360(a.hdg+a.orbit.dir*90);
+      if(a.orbit.left<=0){ a.nav='hdg'; a.tgt.hdg=a.orbit.h0; a.status='Orbit tamam'; renderStrips(); } break; }
+    case 'hold': { const H=a.hold; H.t+=dt;
+      if(H.ph===0){ a.forceTurn=1; a.tgt.hdg=norm360(a.hdg+90); if(Math.abs(norm180(a.hdg-(H.inb+180)))<4){H.ph=1;H.t=0;} }
+      else if(H.ph===1){ a.tgt.hdg=norm360(H.inb+180); if(H.t>60){H.ph=2;} }
+      else if(H.ph===2){ a.forceTurn=1; a.tgt.hdg=norm360(a.hdg+90); if(Math.abs(norm180(a.hdg-H.inb))<4){H.ph=3;H.t=0;} }
+      else { if(steerTo(a,H.fix)<500||H.t>90){H.ph=0;H.t=0;} }
+      break; }
+    case 'direct': { const d=steerTo(a,a.dct.p); if(d<600){ a.nav='hdg'; a.status=a.dct.label+' üzerinde'; renderStrips(); } break; }
+    case 'enroute': { const d=steerTo(a,a.dct.p); if(d<2000){ a.nav='hold'; a.hold={fix:a.dct.p,inb:a.hdg,ph:0,t:0}; a.status='Hedefte, holding'; renderStrips(); } break; }
+    case 'app': approach(a,dt); break;
+    case 'circuit': circuit(a,dt); break;
+  }
+}
+function approach(a,dt){
+  const {R,along,xt}=rwyFrame(a,a.app.end);
+  const hd=Math.abs(norm180(a.hdg-R.qfu));
+  if(!a.app.est){
+    a.tgt.spd=Math.min(a.tgt.spd,a.perf.w==='L'?90:190);
+    if(a.app.ph==='pos'){ const P=[R.thr[0]-R.u[0]*a.app.fd,R.thr[1]-R.u[1]*a.app.fd]; if(steerTo(a,P)<1500) a.app.ph='turn'; return; }
+    if(a.app.ph==='turn'){ a.tgt.hdg=R.qfu; a.forceTurn=Math.sign(norm180(R.qfu-a.hdg))||1; if(hd<60) a.app.ph='int'; else return; }
+    if(along<2.5*NM && !a.app.visual){ a.app.ph='pos'; a.app.fd=12*NM; return; }
+    if(along<0.5*NM){ goAround(a,'Finali yakalayamadı'); return; }
+    a.tgt.hdg=norm360(R.qfu-clamp(xt/40,-45,45));   // steer toward the centreline
+    if(Math.abs(xt)<250&&hd<35){ a.app.est=true; a.status=(a.app.visual?'Görerek yaklaşma ':'ILS yakalandı ')+a.app.end; renderStrips(); }
+  } else {
+    a.tgt.hdg=norm360(R.qfu-clamp(xt/25,-15,15));
+    const gp=R.elev+Math.max(0,along)/NM*318+50;
+    if(a.alt>gp-30) a.glide=gp;
+    a.tgt.spd=along>8*NM?Math.min(a.tgt.spd,210):along>5*NM?180:along>3*NM?a.perf.vapp+15:a.perf.vapp;
+    if(along<=60){ if(a.ldg) touchdown(a,R); else goAround(a,'İniş izni yok'); }
+  }
+}
+function circuitPts(E,hand){ const R=RW[E], u=R.u, s=hand==='L'?[-u[1],u[0]]:[u[1],-u[0]], W=1.0*NM, B=1.2*NM;
+  const P=(al,off)=>[R.thr[0]+u[0]*al+s[0]*off,R.thr[1]+u[1]*al+s[1]*off];
+  return { dwMid:P(R.len/2,W), dwEnd:P(-B*0.2,W), baseTurn:P(-B,W), final:P(-B,0), final3:P(-3*NM,0), short:P(-1*NM,0) }; }
+function circuit(a,dt){
+  const C=a.cir, R=RW[C.end], pts=circuitPts(C.end,C.hand), cAlt=R.elev+1000;
+  if(C.leg==='join'){ a.tgt.alt=Math.max(cAlt,a.tgt.alt>cAlt+1500?cAlt+500:cAlt); if(steerTo(a,C.joinPt)<700){ C.leg=C.next; a.status=({downwind:'Downwind',base:'Base leg',final:'Final'})[C.leg]+' '+C.end; renderStrips(); } return; }
+  if(C.leg==='downwind'){ a.tgt.alt=cAlt; a.tgt.spd=Math.min(a.tgt.spd||100,a.perf.w==='L'?95:200);
+    const d=steerTo(a,pts.baseTurn); if(d<500){ C.leg='base'; a.status='Base leg '+C.end; renderStrips(); } return; }
+  if(C.leg==='base'){ a.tgt.alt=cAlt-300; const d=steerTo(a,pts.final); if(d<450){ C.leg='final'; a.nav='app'; a.app={end:C.end,est:true,visual:true,ph:'int',fd:0}; a.status='Final '+C.end; renderStrips(); } }
+}
+function touchdown(a,R){ a.air=false; a.alt=R.elev; a.vs=0; a.nav='hdg'; a.mode='rollout'; a.hdg=R.qfu; a.rollEnd=R.end; a.status='İndi '+R.end; a.ldg=false; renderStrips(); toast(`${a.cs} ${R.end} pistine indi`); }
+function goAround(a,why){ const R=RW[a.app?a.app.end:a.rwy]; a.nav='hdg'; a.tgt.hdg=R?R.qfu:a.hdg; a.tgt.alt=Math.max(a.alt+1000,ELEV+3000); a.tgt.spd=Math.max(a.ias,a.perf.vapp+25); a.app=null; a.ldg=false;
+  a.status='Pas geçti'+(why?' ('+why+')':''); renderStrips(); toast(`${a.cs} pas geçiyor${why?': '+why:''}`); }
+function stepTakeoff(a,dt){
+  const R=RW[a.toEnd]; a.ias+=(a.perf.w==='L'?3:3.2)*dt;
+  const v=hv(R.qfu); a.pos=[a.pos[0]+v[0]*a.ias*KT*dt,a.pos[1]+v[1]*a.ias*KT*dt]; a.hdg=R.qfu;
+  if(a.ias>=a.perf.vr){ a.air=true; a.mode='air'; a.nav='hdg'; a.tgt.hdg=R.qfu; a.tgt.spd=a.perf.w==='L'?80:210;
+    if(a.tgt.alt<ELEV+1500) a.tgt.alt=ELEV+(a.rules==='V'?1000:5000); a.status='Kalktı '+R.end; renderStrips(); toast(`${a.cs} ${R.end} pistinden kalktı`); }
+}
+function stepStopRun(a,dt){ a.ias=Math.max(0,a.ias-4*dt); const v=hv(a.hdg); a.pos=[a.pos[0]+v[0]*a.ias*KT*dt,a.pos[1]+v[1]*a.ias*KT*dt];
+  if(a.ias<=0){ a.mode='lined'; a.status='Kalkış iptal, pistte durdu'; renderStrips(); } }
+function stepRollout(a,dt){
+  const R=RW[a.rollEnd]; a.ias=Math.max(18,a.ias-2.6*dt);
+  const {along,xt}=rwyFrame(a,a.rollEnd); a.hdg=norm360(R.qfu-clamp(xt/20,-5,5));
+  const v=hv(a.hdg); a.pos=[a.pos[0]+v[0]*a.ias*KT*dt,a.pos[1]+v[1]*a.ias*KT*dt];
+  if(a.ias<=18.01){ // find the next exit ahead
+    const ex=findExit(a,R,-along); if(ex){ startPath(a,ex,{spd:15,mode:'taxi',onEnd:'vacated',status:'Pisti terk ediyor'}); }
+    else if(-along>R.len-50){ a.mode='stopped'; a.ias=0; a.status='Pist sonunda durdu'; renderStrips(); } }
+}
+function findExit(a,R,pos){ // pos = metres past threshold
+  let best=null;
+  NODES.forEach(n=>{ if(!onRunway(n.id)) return; const v=[n.x-R.thr[0],n.y-R.thr[1]]; const s=v[0]*R.u[0]+v[1]*R.u[1], x=v[0]*R.u[1]-v[1]*R.u[0];
+    if(Math.abs(x)>R.width/2+5||s<pos+20||s>pos+400) return;
+    ADJ[n.id].forEach(({e,o})=>{ const E=EDGES[e]; if(E.kind==='runway') return;
+      const p=E.a===n.id?E.pts:E.pts.slice().reverse(); const d=[p[Math.min(3,p.length-1)][0]-p[0][0],p[Math.min(3,p.length-1)][1]-p[0][1]];
+      const ang=Math.abs(norm180(brg([0,0],d)-R.qfu)); if(ang>120) return;
+      if(!best||s<best.s) best={s,n,p}; }); });
+  if(!best) return null;
+  const out=[a.pos.slice(),[best.n.x,best.n.y]];
+  for(const q of best.p.slice(1)){ out.push(q.slice()); const v=[q[0]-R.thr[0],q[1]-R.thr[1]]; if(Math.abs(v[0]*R.u[1]-v[1]*R.u[0])>R.width/2+95) break; }
+  return out;
+}
+
+// ======================================================================
+//  commands (icons)
+// ======================================================================
+const ICONS=[
+  ['park','Trafik Park','gnd'],['push','Trafik PushBack','gnd'],['pushstop','PushBack Durdurma','gnd'],['taxi','Trafik Taksi','gnd'],
+  ['taxistop','Taksi Durdurma','gnd'],['lineup','Piste Giriş','gnd'],['takeoff','Trafik Kalkış','gnd'],['tocancel','Kalkış İptal','gnd'],
+  ['sid','SID','air'],['enroute','ENROUTE','air'],['holding','HOLDING','air'],['approach','APPROACH','air'],['star','STAR','air'],
+  ['landing','LANDING','air'],['visual','Görerek Yaklaşma','air'],['orbit','Orbit','air'],['teleport','Işınlama','any'],['goaround','Meydan Turu','air']];
+function cmd(k){
+  const a=SEL; if(!a){ toast('Önce bir uçak seç.'); return; }
+  const veh=a.kind==='veh';
+  if(veh && !['taxi','taxistop','teleport','park'].includes(k)){ toast('Bu komut yer aracı için yok.'); return; }
+  switch(k){
+    case 'park': {
+      if(a.air){ toast('Uçak havada.'); return; }
+      if(veh){ a.path=null; a.mode='stopped'; a.ias=0; a.status='Bekliyor'; break; }
+      beginRoute(a,'park'); return; }
+    case 'push': {
+      if(a.mode!=='parked'||!a.stand){ toast('Pushback sadece park yerindeki uçak için.'); return; }
+      const s=STANDS[a.stand], le=ADJ[s.node].map(x=>EDGES[x.e]).find(E=>E.kind==='leadin'); if(!le){ toast('Bu park yerinin geri itme çizgisi yok.'); return; }
+      const p=(le.b===s.node?le.pts.slice().reverse():le.pts.slice()); p[0]=a.pos.slice();
+      a.stand=null; startPath(a,p,{spd:3,back:true,mode:'push',onEnd:'pushed',status:'Pushback'}); break; }
+    case 'pushstop': case 'taxistop': {
+      if(!a.path){ toast('Uçak hareket etmiyor.'); return; }
+      if(a.mode==='hold-taxi'){ a.mode=a.prevMode; a.status=a.prevStatus; } else { a.prevMode=a.mode; a.prevStatus=a.status; a.mode='hold-taxi'; a.status='Durdu (bekliyor)'; }
+      break; }
+    case 'taxi': { if(a.air){ toast('Uçak havada.'); return; } beginRoute(a,'taxi'); return; }
+    case 'lineup': {
+      if(a.air){ toast('Uçak havada.'); return; }
+      const R=RW[a.rwy], {along,xt}=rwyFrame(a,a.rwy);
+      if(Math.abs(xt)>250||-along<-200||-along>R.len){ toast(`Uçak ${a.rwy} pistine yakın değil. Önce taksi ile bekleme noktasına getir.`); return; }
+      const s=clamp(-along,0,R.len-600), q=[R.thr[0]+R.u[0]*s,R.thr[1]+R.u[1]*s];
+      const q2=[q[0]+R.u[0]*40,q[1]+R.u[1]*40];
+      startPath(a,[a.pos.slice(),q,q2],{spd:8,mode:'taxi',onEnd:'lined',arg:a.rwy,status:'Piste giriyor '+a.rwy}); break; }
+    case 'takeoff': {
+      if(a.mode!=='lined'){ toast('Önce "Piste Giriş" ile pisti hizala.'); return; }
+      a.toEnd=a.rwy; a.mode='tkof'; a.status='Kalkış koşusu '+a.rwy; break; }
+    case 'tocancel': { if(a.mode!=='tkof'){ toast('Uçak kalkış koşusunda değil.'); return; } a.mode='rto'; a.status='Kalkış iptal'; break; }
+    case 'sid': case 'star': toast(`${k.toUpperCase()} rotaları için LTAC AIP ${k.toUpperCase()} verisi gerekiyor. Gönderdiğinde eklenecek.`); return;
+    case 'enroute': {
+      if(!a.air){ toast('Uçak havada değil.'); return; }
+      const code=(a.ades&&a.ades!=='LTAC'&&APT[a.ades])?a.ades:'LTAC', ap=APT[code]; if(!ap){ toast('Varış meydanı bulunamadı.'); return; }
+      a.nav='enroute'; a.dct={p:g2l(ap.lat,ap.lon),label:code}; a.status='Enroute → '+code; break; }
+    case 'holding': { if(!a.air){ toast('Uçak havada değil.'); return; } a.nav='hold'; a.hold={fix:a.pos.slice(),inb:a.hdg,ph:0,t:0}; a.status='Holding (sağ)'; break; }
+    case 'approach': case 'visual': {
+      if(!a.air){ toast('Uçak havada değil.'); return; }
+      const {along,xt}=rwyFrame(a,a.rwy), hd=Math.abs(norm180(a.hdg-RW[a.rwy].qfu)); const direct=along>4*NM&&hd<90&&Math.abs(xt)<along;
+      a.nav='app'; a.app={end:a.rwy,est:false,visual:k==='visual',ph:direct||(k==='visual'&&along>1.5*NM)?'int':'pos',fd:(k==='visual'?5:12)*NM};
+      a.status=(k==='visual'?'Görerek yaklaşma ':'ILS ')+a.rwy; break; }
+    case 'landing': { if(!a.air){ toast('Uçak havada değil.'); return; }
+      if(a.nav!=='app'&&a.nav!=='circuit'){ toast('Önce yaklaşma (APPROACH, görerek ya da VFR tur) ver.'); return; }
+      a.ldg=true; a.status+=' · iniş izni'; break; }
+    case 'orbit': { if(!a.air){ toast('Uçak havada değil.'); return; } a.nav='orbit'; a.orbit={dir:1,left:360,h0:a.hdg}; a.status='Orbit (sağ 360)'; break; }
+    case 'goaround': { if(!a.air){ toast('Uçak havada değil.'); return; } goAround(a,''); return; }
+    case 'teleport': { setMode({k:'tele',a}); return; }
+  }
+  renderStrips(); renderFMS();
+}
+function joinVFR(){
+  const a=SEL; if(!a||a.kind!=='ac'||!a.air){ toast('Havadaki bir uçak seç.'); return; }
+  const E=document.getElementById('vRwy').value, pos=document.getElementById('vPos').value, hand=document.getElementById('vHand').value;
+  const pts=circuitPts(E,hand); a.rwy=E;
+  if(pos==='final'||pos==='touchdown'){ a.nav='app'; a.app={end:E,est:false,visual:true,ph:'pos',fd:3*NM}; if(pos==='touchdown') a.ldg=true; a.status=`Final ${E}${pos==='touchdown'?' · iniş':''}`; }
+  else { a.nav='circuit'; a.cir={end:E,hand,leg:'join',next:pos,joinPt:pos==='downwind'?pts.dwMid:pts.baseTurn}; a.status=`${hand==='L'?'Left':'Right'} hand ${pos} ${E}`; }
+  renderStrips(); renderFMS();
+}
+
+// ======================================================================
+//  map interaction modes (route picking, teleport, add-position)
+// ======================================================================
+let MODE=null;
+function setMode(m){ MODE=m; const el=document.getElementById('mode'); canvas.classList.toggle('pick',!!m);
+  if(!m){ el.hidden=true; return; } el.hidden=false;
+  if(m.k==='route'){ const names=m.preview?m.preview.names.join(' → '):'';
+    el.innerHTML=`<span><b>${m.a.cs}</b> ${m.why==='park'?'park yerine':'taksi'}: pembe noktaları sırayla tıkla${m.why==='park'?', sonunda park yerini seç':''}.${names?' <b>'+names+'</b>':''}</span>
+      <button id="rUndo">Geri al</button><button id="rX">İptal</button><button class="go" id="rGo">Başlat</button>`;
+    document.getElementById('rUndo').onclick=()=>{ m.picks.pop(); rebuildRoute(m); setMode(m); };
+    document.getElementById('rX').onclick=()=>setMode(null);
+    document.getElementById('rGo').onclick=()=>commitRoute(m); }
+  else if(m.k==='tele'){ el.innerHTML=`<span><b>${m.a.cs}</b> için yeni konumu haritada tıkla.</span><button id="rX">İptal</button>`; document.getElementById('rX').onclick=()=>setMode(null); }
+  else if(m.k==='place'){ el.innerHTML=`<span>Konumu haritada tıkla.</span><button id="rX">İptal</button>`; document.getElementById('rX').onclick=()=>{ setMode(null); document.getElementById('dlgAdd').hidden=false; }; }
+}
+function beginRoute(a,why){ setMode({k:'route',a,why,picks:[],preview:null}); }
+function rebuildRoute(m){
+  const a=m.a; if(!m.picks.length){ m.preview=null; return; }
+  let [start]=nearestNode(a.pos);
+  if(a.stand&&STANDS[a.stand]) start=STANDS[a.stand].node;
+  const pts=[a.pos.slice()], names=[]; let cur=start;
+  for(const p of m.picks){ if(p===cur) continue; const r=dijkstra(cur,p,a.kind==='veh'); if(!r){ m.preview=null; toast('Bu noktaya yol bulunamadı.'); m.picks.pop(); return rebuildRoute(m); }
+    r.pts.forEach((q,i)=>{ if(i===0&&dist(q,pts.at(-1))<1) return; pts.push(q); }); r.names.forEach(n=>{ if(names.at(-1)!==n) names.push(n); }); cur=p; }
+  m.preview={pts,names,end:cur};
+}
+function commitRoute(m){
+  const a=m.a; if(!m.preview){ toast('Önce en az bir nokta seç.'); return; }
+  const endNode=NODES[m.preview.end];
+  if(m.why==='park'&&!endNode.stand){ toast('Park için son nokta bir park yeri olmalı.'); return; }
+  a.stand=null; const veh=a.kind==='veh';
+  startPath(a,m.preview.pts,{spd:veh?20:15,mode:'taxi',onEnd:(!veh&&endNode.stand)?'park':'stop',arg:endNode.stand,status:'Taksi: '+m.preview.names.join(' ')+(endNode.stand?' → '+endNode.stand:endNode.hp?' → '+endNode.hp:'')});
+  setMode(null); renderStrips(); renderFMS();
+}
+
+// ======================================================================
+//  simulation loop
+// ======================================================================
+let simLast=performance.now();
+function simStep(dt){
+  for(const a of TR){
+    if(a.mode==='hold-taxi') continue;
+    if(a.path){ stepPath(a,dt); continue; }
+    if(a.mode==='tkof') stepTakeoff(a,dt);
+    else if(a.mode==='rto') stepStopRun(a,dt);
+    else if(a.mode==='rollout') stepRollout(a,dt);
+    else if(a.air) stepAir(a,dt);
+  }
+}
+setInterval(()=>{ const now=performance.now(); let dt=(now-simLast)/1000; simLast=now; dt=Math.min(dt,1); simStep(dt); broadcast(); },100);
+
+// ======================================================================
+//  map drawing
+// ======================================================================
+const canvas=document.getElementById('map'), ctx=canvas.getContext('2d');
+const view={cx:ARP[0]+200,cy:ARP[1],s:0.22};   // s = px per metre
+let CW=0,CH=0;
+function resize(){ const r=canvas.getBoundingClientRect(), d=Math.min(2,devicePixelRatio||1); CW=r.width; CH=r.height; canvas.width=CW*d; canvas.height=CH*d; ctx.setTransform(d,0,0,d,0,0); }
+addEventListener('resize',resize);
+const S=p=>[(p[0]-view.cx)*view.s+CW/2,(view.cy-p[1])*view.s+CH/2];
+const W=(x,y)=>[(x-CW/2)/view.s+view.cx,view.cy-(y-CH/2)/view.s];
+const GEOL=GEO.countries.map(c=>({tr:c.tr,n:c.n,r:c.r.map(r=>r.map(([lon,lat])=>g2l(lat,lon)))}));
+const APL=GEO.airports.map(a=>({c:a.c,p:g2l(a.lat,a.lon)}));
+function poly(pts){ ctx.beginPath(); pts.forEach((p,i)=>{ const q=S(p); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); }); ctx.closePath(); }
+function line(pts){ ctx.beginPath(); pts.forEach((p,i)=>{ const q=S(p); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); }); }
+function draw(){
+  ctx.fillStyle='#3a3d40'; ctx.fillRect(0,0,CW,CH);
+  const s=view.s;
+  // countries
+  ctx.lineJoin='round';
+  for(const c of GEOL){ for(const r of c.r){ poly(r); ctx.fillStyle=c.tr?'#4a4d50':'#424548'; ctx.fill(); ctx.strokeStyle=c.tr?'#c8ccd0':'#7d8287'; ctx.lineWidth=c.tr?1.4:0.8; ctx.stroke(); } }
+  // airports (zoomed out)
+  if(s<0.02){ ctx.font='11px ui-monospace,Menlo,monospace'; for(const a of APL){ const q=S(a.p); if(q[0]<-50||q[1]<-50||q[0]>CW+50||q[1]>CH+50) continue;
+    ctx.fillStyle=a.c==='LTAC'?'#ffd24a':'#d8dde2'; ctx.beginPath(); ctx.arc(q[0],q[1],a.c==='LTAC'?4:2.5,0,7); ctx.fill(); if(s>0.0006||a.c==='LTAC') ctx.fillText(a.c,q[0]+5,q[1]-4); } }
+  // range rings 5/10/20 NM
+  ctx.strokeStyle='rgba(255,255,255,.22)'; ctx.lineWidth=1; ctx.setLineDash([6,6]); ctx.font='11px ui-monospace,Menlo,monospace'; ctx.fillStyle='rgba(255,255,255,.5)';
+  for(const n of [5,10,20]){ const c=S(ARP), r=n*NM*s; if(r<12||r>4*Math.max(CW,CH)) continue; ctx.beginPath(); ctx.arc(c[0],c[1],r,0,7); ctx.stroke(); ctx.fillText(n+' NM',c[0]+4,c[1]-r-3); }
+  ctx.setLineDash([]);
+  // aerodrome
+  if(s>0.004){
+    ctx.fillStyle='#6b6e70'; DATA.pavement.forEach(p=>{poly(p);ctx.fill();});
+    ctx.fillStyle='#3a3d40'; DATA.holes.forEach(p=>{poly(p);ctx.fill();});
+    if(DATA.buildings&&s>0.05){ ctx.fillStyle='#5f7d9a'; DATA.buildings.forEach(b=>{poly(b.pts);ctx.fill();}); }
+    for(const r of DATA.runways){ const a=r.thr[r.ends[0]].xy,b=r.thr[r.ends[1]].xy,L=dist(a,b),n=[-(b[1]-a[1])/L*r.width/2,(b[0]-a[0])/L*r.width/2];
+      poly([[a[0]+n[0],a[1]+n[1]],[b[0]+n[0],b[1]+n[1]],[b[0]-n[0],b[1]-n[1]],[a[0]-n[0],a[1]-n[1]]]); ctx.fillStyle='#232627'; ctx.fill();
+      if(s>0.05){ ctx.strokeStyle='#e8e8e2'; ctx.setLineDash([30*s,20*s]); ctx.lineWidth=Math.max(1,0.9*s); line([a,b]); ctx.stroke(); ctx.setLineDash([]); } }
+    // extended centrelines
+    ctx.strokeStyle='rgba(255,255,255,.25)'; ctx.setLineDash([4,8]); ctx.lineWidth=1;
+    for(const E of ENDS){ const R=RW[E]; line([R.thr,[R.thr[0]-R.u[0]*12*NM,R.thr[1]-R.u[1]*12*NM]]); ctx.stroke(); } ctx.setLineDash([]);
+    // taxi centrelines
+    if(s>0.08){ ctx.strokeStyle='rgba(241,193,43,.75)'; ctx.lineWidth=1; EDGES.forEach(e=>{ if(e.kind==='runway') return; line(e.pts); ctx.stroke(); }); }
+    // runway labels
+    if(s>0.03){ ctx.font='bold 12px ui-monospace,Menlo,monospace'; ctx.fillStyle='#fff'; for(const E of ENDS){ const R=RW[E], q=S([R.thr[0]-R.u[0]*90,R.thr[1]-R.u[1]*90]); ctx.fillText(E,q[0]-11,q[1]+4); } }
+    // touchdown zones (orange), route points (pink), holding points (green), stands
+    if(s>0.12){
+      for(const E of ENDS){ const R=RW[E], q=S([R.thr[0]+R.u[0]*300,R.thr[1]+R.u[1]*300]); ctx.fillStyle='#ff9a1f'; ctx.beginPath(); ctx.arc(q[0],q[1],5,0,7); ctx.fill(); }
+      NODES.forEach(n=>{ const q=S([n.x,n.y]);
+        if(n.hp){ ctx.fillStyle='#7dff6a'; ctx.beginPath(); ctx.arc(q[0],q[1],4.5,0,7); ctx.fill(); }
+        else if(n.stand){ ctx.fillStyle='#ff4fa3'; ctx.beginPath(); ctx.arc(q[0],q[1],3.2,0,7); ctx.fill(); }
+        else { ctx.fillStyle='#ff4fa3'; ctx.beginPath(); ctx.arc(q[0],q[1],3.8,0,7); ctx.fill(); } });
+      if(s>0.3){ ctx.font='10px ui-monospace,Menlo,monospace'; ctx.fillStyle='#ffd0e6'; NODES.forEach(n=>{ if(!n.stand) return; const q=S([n.x,n.y]); ctx.fillText(n.stand,q[0]+5,q[1]-3); });
+        ctx.fillStyle='#c9ffbf'; NODES.forEach(n=>{ if(!n.hp) return; const q=S([n.x,n.y]); ctx.fillText(n.hp,q[0]+6,q[1]+10); }); }
+    }
+  }
+  // route preview
+  if(MODE&&MODE.k==='route'&&MODE.preview){ ctx.strokeStyle='#00e5ff'; ctx.lineWidth=3; line(MODE.preview.pts); ctx.stroke();
+    MODE.picks.forEach((p,i)=>{ const q=S([NODES[p].x,NODES[p].y]); ctx.fillStyle='#00e5ff'; ctx.beginPath(); ctx.arc(q[0],q[1],7,0,7); ctx.fill(); ctx.fillStyle='#002'; ctx.font='bold 10px system-ui'; ctx.fillText(i+1,q[0]-3,q[1]+3.5); }); }
+  // traffic
+  for(const a of TR){
+    const q=S(a.pos), sel=a===SEL;
+    if(a.path&&(sel||a.mode==='taxi')){ ctx.strokeStyle=sel?'rgba(0,229,255,.8)':'rgba(0,229,255,.3)'; ctx.lineWidth=2; const P=a.path; const i0=P.cum.findIndex(c=>c>=P.s); line([a.pos].concat(P.pts.slice(Math.max(1,i0)))); ctx.stroke(); }
+    if(a.kind==='veh'){ ctx.save(); ctx.translate(q[0],q[1]); ctx.rotate(a.hdg*D2R); ctx.fillStyle=sel?'#00e5ff':'#ffe14a'; ctx.fillRect(-3.5,-6,7,12); ctx.restore();
+      ctx.fillStyle='#ffe14a'; ctx.font='10px ui-monospace,Menlo,monospace'; ctx.fillText(a.cs,q[0]+8,q[1]-6); continue; }
+    if(!a.air&&s>0.08){ // ground: plane shape to scale (min size)
+      const k=Math.max(1,s*0.9); ctx.save(); ctx.translate(q[0],q[1]); ctx.rotate(a.hdg*D2R); ctx.scale(k,k); ctx.fillStyle=sel?'#00e5ff':'#f2f2f2';
+      ctx.beginPath(); ctx.moveTo(0,-18); ctx.lineTo(2,-14); ctx.lineTo(2,-4); ctx.lineTo(17,3); ctx.lineTo(17,6); ctx.lineTo(2,2); ctx.lineTo(2,11); ctx.lineTo(6,15); ctx.lineTo(6,17); ctx.lineTo(0,15.5); ctx.lineTo(-6,17); ctx.lineTo(-6,15); ctx.lineTo(-2,11); ctx.lineTo(-2,2); ctx.lineTo(-17,6); ctx.lineTo(-17,3); ctx.lineTo(-2,-4); ctx.lineTo(-2,-14); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.fillStyle=sel?'#00e5ff':'#9cff5a'; ctx.font='bold 11px ui-monospace,Menlo,monospace'; ctx.fillText(a.cs,q[0]+12,q[1]-8);
+      continue; }
+    // airborne / zoomed out: radar symbol + leader + label
+    const col=sel?'#00e5ff':'#9cff5a'; ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=1.5;
+    ctx.strokeRect(q[0]-4,q[1]-4,8,8);
+    const v=hv(a.hdg), sp=(a.gs||a.ias)*KT*60*s; ctx.beginPath(); ctx.moveTo(q[0],q[1]); ctx.lineTo(q[0]+v[0]*sp,q[1]-v[1]*sp); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(q[0]+5,q[1]-5); ctx.lineTo(q[0]+16,q[1]-16); ctx.stroke();
+    ctx.font='bold 11px ui-monospace,Menlo,monospace'; ctx.fillText(a.cs,q[0]+18,q[1]-30);
+    ctx.font='11px ui-monospace,Menlo,monospace';
+    const tr=a.vs>200?'↑':a.vs<-200?'↓':' ';
+    ctx.fillText(`A${String(Math.round(a.alt/100)).padStart(3,'0')}${tr} ${Math.round(a.gs||a.ias)}`,q[0]+18,q[1]-18);
+    ctx.fillText(`${a.type} ${a.rules}`,q[0]+18,q[1]-6);
+  }
+  // scale bar text
+  const nmPx=NM*s; document.getElementById('scale').textContent=nmPx>40?`1 NM = ${Math.round(nmPx)} px`:`${Math.round(100/nmPx)} NM / 100 px`;
+  requestAnimationFrame(draw);
+}
+// pan / zoom / click
+let drag=null;
+canvas.addEventListener('pointerdown',e=>{ drag={x:e.clientX,y:e.clientY,cx:view.cx,cy:view.cy,moved:false}; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove',e=>{ if(!drag) return; const dx=e.clientX-drag.x,dy=e.clientY-drag.y; if(Math.hypot(dx,dy)>4) drag.moved=true; if(drag.moved){ view.cx=drag.cx-dx/view.s; view.cy=drag.cy+dy/view.s; } });
+canvas.addEventListener('pointerup',e=>{ const d=drag; drag=null; if(d&&!d.moved) click(e); });
+canvas.addEventListener('wheel',e=>{ e.preventDefault(); const r=canvas.getBoundingClientRect(), mx=e.clientX-r.left,my=e.clientY-r.top, before=W(mx,my);
+  view.s=clamp(view.s*Math.exp(-e.deltaY*0.0015),Math.max(0.00015,CW/2.4e6),3); const after=W(mx,my); view.cx+=before[0]-after[0]; view.cy+=before[1]-after[1]; },{passive:false});
+function click(e){
+  const r=canvas.getBoundingClientRect(), mx=e.clientX-r.left,my=e.clientY-r.top, w=W(mx,my);
+  if(MODE&&MODE.k==='route'){ const [n,d]=nearestNode(w); if(d*view.s>14){ toast('Bir rota noktasına (pembe/yeşil) tıkla.'); return; } MODE.picks.push(n); rebuildRoute(MODE); setMode(MODE); return; }
+  if(MODE&&MODE.k==='tele'){ const a=MODE.a; a.pos=w; a.path=null; if(!a.air){ a.mode='stopped'; a.stand=null; a.ias=0; } a.status='Işınlandı'; setMode(null); renderStrips(); renderFMS(); return; }
+  if(MODE&&MODE.k==='place'){ const [lat,lon]=l2g(w[0],w[1]); const f=MODE.f; document.getElementById(f+'Lat').value=lat.toFixed(5); document.getElementById(f+'Lon').value=lon.toFixed(5); setMode(null); document.getElementById('dlgAdd').hidden=false; return; }
+  let best=null,bd=18; for(const a of TR){ const q=S(a.pos), d=Math.hypot(q[0]-mx,q[1]-my); if(d<bd){bd=d;best=a;} }
+  if(best) select(best);
+}
+
+// ======================================================================
+//  strips / FMS / PFD
+// ======================================================================
+const ICO_PLANE='<svg viewBox="0 0 24 24" fill="#fff"><path d="M21 12.6c0-.7-.7-1.1-1.5-1.1h-4.9L9.5 4.5H7.4l2.7 7H5.3L3.5 9.1H1.8L3 13.6l-1.2 4.5h1.7l1.8-2.4h4.8l-2.7 7h2.1l5.1-7h4.9c.8 0 1.5-.4 1.5-1.1z"/></svg>';
+const ICO_CAR='<svg viewBox="0 0 24 24" fill="#fff"><rect x="4" y="8" width="16" height="8" rx="2"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="17" r="2"/></svg>';
+function stripClass(a){ if(a.kind==='veh') return 'veh'; if(a.adep==='LTAC') return 'dep'; if(a.ades==='LTAC') return 'arr'; return 'ovf'; }
+function renderStrips(){
+  const el=document.getElementById('strips'); document.getElementById('nStr').textContent=TR.length;
+  if(!TR.length){ el.innerHTML='<div class="empty">Henüz trafik yok. Sol üstteki menüden <b>Add aircraft</b> veya <b>Add vehicle</b> seç.</div>'; return; }
+  const ac=TR.filter(a=>a.kind==='ac'), vh=TR.filter(a=>a.kind==='veh');
+  const one=a=>{ const c=stripClass(a), stc=a.kind==='veh'?'veh':a.air?'air':a.mode==='parked'?'':'gnd';
+    return `<div class="strip ${c} ${a===SEL?'sel':''}" data-id="${a.id}"><div class="bar"></div><div class="body">
+      <span class="cs">${a.cs}</span><span class="r">${a.kind==='veh'?a.type:a.type+' '+a.rules}</span>
+      <span class="m">${a.kind==='veh'?'':`${a.adep||'----'}→${a.ades||'----'} ${a.rwy}`}</span><span class="r">${a.kind==='veh'?'':a.ssr}</span>
+      <span class="m" style="grid-column:1/-1">${a.status||''}</span></div>
+      <div class="st ${stc}">${a.kind==='veh'?ICO_CAR:ICO_PLANE}</div></div>`; };
+  el.innerHTML=ac.map(one).join('')+(vh.length?'<div class="bayh" style="margin:4px -6px">YER ARAÇLARI</div>'+vh.map(one).join(''):'');
+  el.querySelectorAll('.strip').forEach(s=>s.onclick=()=>select(TR.find(a=>a.id===s.dataset.id)));
+}
+function select(a){ SEL=a||null; renderStrips(); renderFMS(); }
+function renderFMS(){
+  const el=document.getElementById('fms'), a=SEL;
+  document.getElementById('vfr').hidden=!(a&&a.kind==='ac'&&a.rules==='V');
+  if(!a){ el.innerHTML='<div class="none">Bir uçak seç (strip veya harita).</div>'; document.getElementById('xCode').textContent='----'; return; }
+  if(a.kind==='veh'){ el.innerHTML=`<div class="r1"><span class="box">${a.type}</span></div><div class="cs">${a.cs}</div><div class="st">${a.status}</div>`; document.getElementById('xCode').textContent='----'; return; }
+  el.innerHTML=`<div class="r1"><span class="box">${a.type}</span><span class="box tg ${a.rules==='I'?'on':''}" data-r="I">I</span><span class="box tg ${a.rules==='V'?'on':''}" data-r="V">V</span><span class="box">${a.perf.w}</span><span class="box" style="margin-left:auto">${a.air?'AIR':'GND'}</span></div>
+    <div class="cs">${a.cs}</div>
+    <div class="grid"><span class="box">${a.ssr}</span><select id="fRwy">${ENDS.map(e=>`<option ${e===a.rwy?'selected':''}>${e}</option>`).join('')}</select><span class="box">${a.adep||'----'}</span><span class="box">${a.ades||'----'}</span></div>
+    <div class="st">${a.status||'—'}</div>`;
+  el.querySelectorAll('.tg').forEach(t=>t.onclick=()=>{ a.rules=t.dataset.r; renderFMS(); renderStrips(); });
+  document.getElementById('fRwy').onchange=e=>{ a.rwy=e.target.value; renderStrips(); };
+  document.getElementById('xCode').textContent=a.ssr;
+  document.querySelectorAll('.xpdr button').forEach(b=>b.classList.toggle('on',a.xpdr===b.dataset.x||(b.dataset.x==='IDENT'&&a.ident>Date.now())));
+}
+// icons (drawn to match the tiles in the reference sheet)
+function tile(k){
+  const sky='#6f9fd6',gnd='#5d7f3c',run='#666';
+  const plane=(x,y,r,sc,c)=>`<g transform="translate(${x} ${y}) rotate(${r}) scale(${sc||1})"><path fill="${c||'#fff'}" d="M10 0c0-.6-.6-1-1.3-1H4.4L-.2-7.3h-1.9L.3-1h-4.2L-5.5-3.2H-7L-6 0l-1 3.2h1.5L-3.9 1H.3L-2.1 7.3h1.9L4.4 1h4.3C9.4 1 10 .6 10 0z"/></g>`;
+  const X='<path d="M24 4l8 8M32 4l-8 8" stroke="#e02424" stroke-width="3"/>';
+  const T={
+    park:`<rect width="36" height="36" fill="#b8202a"/>${plane(18,18,-90,1.3)}`,
+    push:`<rect width="36" height="20" fill="${sky}"/><rect y="20" width="36" height="16" fill="${run}"/>${plane(20,22,180,1)}<path d="M4 30h10" stroke="#fff" stroke-width="2"/><path d="M4 30l4-3v6z" fill="#fff"/>`,
+    pushstop:`<rect width="36" height="20" fill="${sky}"/><rect y="20" width="36" height="16" fill="${run}"/>${plane(16,23,180,1)}<circle cx="27" cy="9" r="6" fill="#e0245e"/>`,
+    taxi:`<rect width="36" height="20" fill="${sky}"/><rect y="20" width="36" height="16" fill="${run}"/>${plane(18,22,0,1.1)}<path d="M4 31h6M14 31h6M24 31h6" stroke="#fff" stroke-width="2"/>`,
+    taxistop:`<rect width="36" height="36" fill="#7a6a3a"/><rect x="9" y="6" width="6" height="24" fill="#3f8a3f"/><rect x="21" y="6" width="6" height="24" fill="#3f8a3f"/>`,
+    lineup:`<rect width="36" height="36" fill="#7b8f63"/><rect x="12" width="12" height="36" fill="${run}"/><path d="M18 2v32" stroke="#fff" stroke-dasharray="3 3"/>${plane(18,18,-90,1.1)}`,
+    takeoff:`<rect width="36" height="22" fill="${sky}"/><rect y="22" width="36" height="14" fill="${gnd}"/><path d="M0 30l36-6" stroke="#ddd" stroke-width="3"/>${plane(20,14,-18,1.1)}`,
+    tocancel:`<rect width="36" height="22" fill="${sky}"/><rect y="22" width="36" height="14" fill="${gnd}"/>${plane(16,22,0,1)}${X}`,
+    sid:`<rect width="36" height="36" fill="#2a5f9e"/>${plane(16,22,-90,1.2)}<text x="25" y="11" font-size="8" font-weight="700" fill="#fff" text-anchor="middle">SID</text>`,
+    enroute:`<rect width="36" height="36" fill="#2a5f9e"/>${plane(18,18,0,1.3)}<path d="M2 18h5" stroke="#fff" stroke-dasharray="2 2"/>`,
+    holding:`<rect width="36" height="36" fill="#2a5f9e"/><rect x="9" y="6" width="18" height="24" rx="9" fill="none" stroke="#fff" stroke-width="2"/>${plane(18,18,-90,0.9)}`,
+    approach:`<rect width="36" height="22" fill="${sky}"/><rect y="22" width="36" height="14" fill="${gnd}"/><path d="M0 30l36 0" stroke="#ddd" stroke-width="3"/>${plane(16,12,18,1.1)}`,
+    star:`<rect width="36" height="36" fill="#2a5f9e"/>${plane(14,24,-90,1.1)}<rect x="18" y="4" width="16" height="9" fill="#fff"/><text x="26" y="11" font-size="7" font-weight="700" fill="#2a5f9e" text-anchor="middle">STAR</text>`,
+    landing:`<rect width="36" height="36" fill="#5d9a4a"/><path d="M6 32L30 4" stroke="#bbb" stroke-width="6"/>${plane(18,18,-50,1)}`,
+    visual:`<rect width="36" height="36" fill="#5d7f3c"/><path d="M14 36l2-34h4l2 34z" fill="#666"/><path d="M18 34V4" stroke="#fff" stroke-dasharray="3 3"/><path d="M8 18h20" stroke="#ddd"/>`,
+    orbit:`<rect width="36" height="36" fill="#2a5f9e"/><circle cx="18" cy="18" r="11" fill="none" stroke="#fff" stroke-width="2"/>${plane(18,18,-90,1)}<path d="M28 13l1 6-5-2z" fill="#fff"/>`,
+    teleport:`<rect width="36" height="36" fill="#3b6aa8"/>${plane(13,22,-90,0.9,'#cfe0ff')}<path d="M22 6l2 4 4 1-4 2-1 4-2-4-4-1 4-2z" fill="#fff"/><path d="M22 22l6-6" stroke="#fff" stroke-dasharray="2 2"/>`,
+    goaround:`<rect width="36" height="36" fill="#557fae"/><circle cx="18" cy="18" r="13" fill="none" stroke="#fff" stroke-width="2"/>${plane(18,20,-90,1.1)}<path d="M18 4v6" stroke="#fff" stroke-width="2"/>`};
+  return `<svg viewBox="0 0 36 36">${T[k]}</svg>`;
+}
+{ const box=document.getElementById('icons'), nm=document.getElementById('icname');
+  ICONS.forEach(([k,label])=>{ const b=document.createElement('button'); b.className='ic'; b.title=label; b.setAttribute('aria-label',label); b.dataset.k=k; b.innerHTML=tile(k);
+    b.onclick=()=>cmd(k); b.onmouseenter=b.onfocus=()=>nm.textContent=label; box.appendChild(b); }); }
+document.querySelectorAll('.xpdr button').forEach(b=>b.onclick=()=>{ const a=SEL; if(!a||a.kind!=='ac') return; if(b.dataset.x==='IDENT') a.ident=Date.now()+18000; else a.xpdr=b.dataset.x; renderFMS(); });
+const pfd=document.getElementById('pfd'), pc=pfd.getContext('2d');
+function drawPFD(){
+  const a=SEL&&SEL.kind==='ac'?SEL:null, w=pfd.width,h=pfd.height;
+  pc.fillStyle='#000'; pc.fillRect(0,0,w,h);
+  const gnd=!a||!a.air; const pitch=gnd?0:clamp((a.vs||0)/Math.max(60,(a.gs||a.ias||60))/101.27*57.3,-15,20), bank=gnd?0:clamp((a.turn||0)*8,-30,30);
+  const cx=w/2,cy=h/2-10;
+  pc.save(); pc.beginPath(); pc.rect(56,10,w-112,h-50); pc.clip(); pc.translate(cx,cy); pc.rotate(-bank*D2R); pc.translate(0,pitch*4);
+  pc.fillStyle='#2f7fd1'; pc.fillRect(-300,-300,600,300); pc.fillStyle='#b5651d'; pc.fillRect(-300,0,600,300); pc.strokeStyle='#fff'; pc.beginPath(); pc.moveTo(-300,0); pc.lineTo(300,0); pc.stroke();
+  pc.fillStyle='#fff'; pc.font='9px monospace'; for(let p=-20;p<=20;p+=10){ if(!p) continue; pc.fillRect(-18,-p*4,36,1); pc.fillText(Math.abs(p),22,-p*4+3); }
+  pc.restore();
+  pc.fillStyle='#ffd400'; pc.fillRect(cx-30,cy-1.5,22,3); pc.fillRect(cx+8,cy-1.5,22,3); pc.fillRect(cx-2,cy-2,4,4);
+  // tapes
+  const tape=(x,val,step,lab)=>{ pc.fillStyle='#333a40'; pc.fillRect(x,10,50,h-50); pc.fillStyle='#fff'; pc.font='10px monospace';
+    for(let k=-4;k<=4;k++){ const v=Math.round(val/step)*step+k*step, y=cy-(v-val)/step*18; if(y<14||y>h-44||v<0) continue; pc.fillText(String(v),x+4,y+3); }
+    pc.fillStyle='#000'; pc.fillRect(x,cy-9,50,18); pc.strokeStyle='#fff'; pc.strokeRect(x,cy-9,50,18); pc.fillStyle='#7dff6a'; pc.font='bold 12px monospace'; pc.fillText(lab,x+4,cy+4); };
+  tape(4,a?a.ias:0,10,String(Math.round(a?a.ias:0))); tape(w-54,a?a.alt:ELEV,100,String(Math.round(a?a.alt:ELEV)));
+  // heading
+  pc.fillStyle='#111'; pc.fillRect(56,h-38,w-112,30); pc.fillStyle='#fff'; pc.font='bold 14px monospace'; pc.textAlign='center';
+  pc.fillText('HDG '+pad3(a?a.hdg:0)+(a?'  GS '+Math.round(a.gs||a.ias||0):''),cx,h-18); pc.textAlign='left';
+  pc.fillStyle='#9fb6c2'; pc.font='10px monospace'; pc.fillText(a?`VS ${Math.round(a.vs||0)}`:'',w-54,h-10);
+  requestAnimationFrame(drawPFD);
+}
+
+// ======================================================================
+//  menus & dialogs
+// ======================================================================
+const $=id=>document.getElementById(id);
+$('mMain').onclick=e=>{ e.stopPropagation(); $('dMain').hidden=!$('dMain').hidden; $('dAc').hidden=true; };
+$('mAc').onclick=e=>{ e.stopPropagation(); $('dAc').hidden=!$('dAc').hidden; $('dMain').hidden=true; };
+addEventListener('click',()=>{ $('dMain').hidden=true; $('dAc').hidden=true; });
+document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openAdd(b.dataset.open));
+function openAdd(which){
+  if(which==='wx'){ $('wDir1').focus(); return; }
+  $('dlgAdd').hidden=false; $('secAc').hidden=which!=='add'; $('secVeh').hidden=which!=='veh'; $('secWx').hidden=true;
+  $('addT').textContent=which==='add'?'Add Aircraft':'Add Vehicle';
+  (which==='add'?$('aCs'):$('vCs')).focus();
+}
+$('addClose').onclick=()=>$('dlgAdd').hidden=true;
+
+$('wxGoto').onclick=()=>{ $('dlgAdd').hidden=true; openAdd('wx'); };
+$('aType').innerHTML=Object.keys(TYPES).map(t=>`<option>${t}</option>`).join('');
+$('aAl').innerHTML=AIRLINES.map(t=>`<option>${t}</option>`).join('');
+$('aStand').innerHTML='<option value="">— yok —</option>'+Object.keys(STANDS).sort((a,b)=>a.localeCompare(b,'tr',{numeric:true})).map(s=>`<option>${s}</option>`).join('');
+$('aCs').oninput=()=>{ const al=airlineOf($('aCs').value); if(al!=='—') $('aAl').value=al; };
+$('aStand').onchange=()=>{ const s=STANDS[$('aStand').value]; if(!s) return; const [lat,lon]=l2g(s.xy[0],s.xy[1]); $('aLat').value=lat.toFixed(5); $('aLon').value=lon.toFixed(5); $('aHdg').value=Math.round(s.hdg); $('aAlt').value=ELEV; $('aSpd').value=0; if(!$('aDep').value) $('aDep').value='LTAC'; };
+$('aType').onchange=()=>{ if($('aType').value==='C172'||$('aType').value==='DA42') $('aRules').value='V'; };
+$('aPick').onclick=()=>{ $('dlgAdd').hidden=true; setMode({k:'place',f:'a'}); };
+$('vPick').onclick=()=>{ $('dlgAdd').hidden=true; setMode({k:'place',f:'v'}); };
+function readPos(f){ const lat=parseFloat($(f+'Lat').value), lon=parseFloat($(f+'Lon').value); if(!isFinite(lat)||!isFinite(lon)) return null; return g2l(lat,lon); }
+$('aGo').onclick=()=>{
+  const cs=$('aCs').value.trim(), pos=readPos('a'), err=$('aErr'); err.textContent='';
+  if(!/^[A-Z0-9]{2,8}$/i.test(cs)){ err.textContent='Callsign 2–8 harf/rakam olmalı.'; return; }
+  if(TR.some(a=>a.cs===cs.toUpperCase())){ err.textContent='Bu callsign zaten var.'; return; }
+  if(!pos){ err.textContent='Konum gerekli: LAT/LON yaz, haritadan seç ya da park yeri seç.'; return; }
+  const ssr=$('aSsr').value.trim(); if(ssr&&!/^[0-7]{4}$/.test(ssr)){ err.textContent='SSR 4 haneli olmalı (0–7).'; return; }
+  const st=$('aStand').value||null, alt=+$('aAlt').value||ELEV, spd=+$('aSpd').value||0;
+  if(alt>ELEV+50&&spd<50){ err.textContent='Havadaki uçak için hız en az 50 kt olmalı.'; return; }
+  const a=addAircraft({cs,type:$('aType').value,airline:$('aAl').value,adep:$('aDep').value.trim(),ades:$('aDes').value.trim(),wpt:$('aWpt').value.trim(),sid:$('aSid').value.trim(),
+    ssr:ssr||null,rules:$('aRules').value,pos:st?STANDS[st].xy:pos,hdg:+$('aHdg').value||0,alt,spd,stand:st});
+  $('dlgAdd').hidden=true; toast(`${a.cs} eklendi`);
+  $('aCs').value=''; $('aSsr').value=''; $('aStand').value='';
+};
+$('vAdd').onclick=()=>{ const cs=$('vCs').value.trim(), pos=readPos('v'), err=$('vErr'); err.textContent='';
+  if(!cs){ err.textContent='Callsign gerekli.'; return; } if(!pos){ err.textContent='Konum gerekli: LAT/LON yaz ya da haritadan seç.'; return; }
+  addVehicle({cs,type:$('vType').value,pos,hdg:+$('vHdg').value||0}); $('dlgAdd').hidden=true; $('vCs').value=''; };
+// aircraft menu
+let acmKind=null;
+document.querySelectorAll('[data-acm]').forEach(b=>b.onclick=()=>{ const a=SEL; if(!a){ toast('Önce bir uçak seç.'); return; }
+  acmKind=b.dataset.acm;
+  if(acmKind==='del'){ TR.splice(TR.indexOf(a),1); select(null); toast(a.cs+' kaldırıldı'); return; }
+  if(a.kind==='veh'&&acmKind!=='cs'){ toast('Yer araçları için sadece callsign değişir.'); return; }
+  const T={hdg:['Arrange heading',`<label>Heading (°)<input id="m1" type="number" min="1" max="360" value="${pad3(a.tgt?a.tgt.hdg:a.hdg)}"></label><label>Dönüş<select id="m2"><option value="">En kısa</option><option value="L">Sola</option><option value="R">Sağa</option></select></label>`],
+    spd:['IAS / TAS',`<label>IAS (kt)<input id="m1" type="number" value="${Math.round(a.tgt?a.tgt.spd:a.ias)}"></label><div class="hint">Şu an IAS ${Math.round(a.ias)} kt · TAS ${Math.round(a.ias*(1+0.02*a.alt/1000))} kt · GS ${Math.round(a.gs||a.ias)} kt</div>`],
+    cs:['Callsign',`<label>Callsign<input id="m1" value="${a.cs}"></label>`],
+    alt:['Altitude',`<label>Altitude (ft)<input id="m1" type="number" step="100" value="${Math.round(a.tgt?a.tgt.alt:a.alt)}"></label>`]}[acmKind];
+  $('acmT').textContent=T[0]; $('acmBody').innerHTML=T[1]; $('acmErr').textContent=''; $('dlgAcm').hidden=false; $('m1').focus(); });
+$('acmX').onclick=()=>$('dlgAcm').hidden=true;
+$('acmGo').onclick=()=>{ const a=SEL, v=$('m1').value.trim(), err=$('acmErr');
+  if(acmKind==='cs'){ if(!/^[A-Z0-9 ]{2,10}$/i.test(v)){ err.textContent='Geçersiz callsign.'; return; } a.cs=v.toUpperCase(); }
+  else { const n=+v; if(!isFinite(n)){ err.textContent='Sayı gir.'; return; }
+    if(acmKind==='hdg'){ if(!a.air){ err.textContent='Heading sadece havada verilir.'; return; } a.nav='hdg'; a.app=null; a.tgt.hdg=norm360(n);
+      const t=$('m2').value; if(t){ a.nav='turn'; } a.status='Heading '+pad3(n); if(t){ a.turnDir=t==='L'?-1:1; a.nav='hdgdir'; } }
+    if(acmKind==='spd'){ a.tgt.spd=clamp(n,0,350); a.status='Hız '+Math.round(n)+' kt'; }
+    if(acmKind==='alt'){ a.tgt.alt=clamp(n,ELEV,45000); a.status=(n>a.alt?'Tırman ':'Alçal ')+Math.round(n)+' ft'; } }
+  $('dlgAcm').hidden=true; renderStrips(); renderFMS(); };
+// directional turn (heading with left/right)
+const _nav=nav; nav=function(a,dt){ if(a.nav==='hdgdir'){ a.glide=null; a.forceTurn=0; if(Math.abs(norm180(a.tgt.hdg-a.hdg))>5) a.forceTurn=a.turnDir; else a.nav='hdg'; return; } _nav(a,dt); };
+$('vRwy').innerHTML=ENDS.map(e=>`<option>${e}</option>`).join(''); $('vGo').onclick=joinVFR;
+addEventListener('keydown',e=>{ if(e.key==='Escape'){ setMode(null); document.querySelectorAll('.veil').forEach(v=>v.hidden=true); } });
+
+// ======================================================================
+//  weather (pilot/instructor owns it) + AWOS
+// ======================================================================
+const WX=WXM.create(); let wxAuto=false, activeRwy='03R';
+function renderAWOS(){
+  const el=$('wxCalc'); if(!el) return; const D=WXM.derived(WX.inp,ELEV), c=WX.cur;
+  el.textContent=`Şu an: ${pad3(c.dir)}° ${Math.round(c.spd)} kt · Td ${D.Td.toFixed(1)} °C · QFE ${D.qfe.toFixed(1)} hPa · ${WXM.presentWx(WX.inp)}`;
+}
+function buildWxInputs(){
+  const I=WX.inp;
+  $('wxin').innerHTML=`
+    <label>Rüzgâr yönü<span class="pair"><input id="wDir1" type="number" value="${I.dirMin}"><span>–</span><input id="wDir2" type="number" value="${I.dirMax}"></span></label>
+    <label>Rüzgâr hızı (kt)<span class="pair"><input id="wSp1" type="number" value="${I.spdMin}"><span>–</span><input id="wSp2" type="number" value="${I.spdMax}"></span></label>
+    <label>QNH (hPa)<input id="wQnh" type="number" step="0.1" value="${I.QNH}"></label>
+    <label>Sıcaklık (°C)<input id="wT" type="number" step="0.1" value="${I.T}"></label>
+    <label>Nem (RH %)<input id="wRH" type="number" value="${I.RH}"></label>
+    <label>Görüş (m)<input id="wVis" type="number" value="${I.vis}"></label>
+    <label>Bulut tabanı<input id="wCb" value="${I.cbase}"></label>
+    <label>RVR<input id="wRvr" value="${I.rvr}"></label>
+    <label>Tmax / Tmin<span class="pair"><input id="wTx" type="number" step="0.1" value="${I.Tmax}"><span>/</span><input id="wTn" type="number" step="0.1" value="${I.Tmin}"></span></label>
+    <label>Pist sıcaklığı<input id="wRwT" type="number" step="0.1" value="${I.rwyT}"></label>
+    <label>Aktif pist<select id="wRwy">${ENDS.map(e=>`<option ${e===activeRwy?'selected':''}>${e}</option>`).join('')}</select></label>
+    <span class="full">
+      <button data-p="none" class="${I.precip==='none'&&!I.storm?'on':''}">Açık</button><button data-p="RA" class="${I.precip==='RA'?'on':''}">Yağmur</button><button data-p="SN" class="${I.precip==='SN'?'on':''}">Kar</button>
+      <button data-s="1" class="${I.storm?'on':''}">Fırtına</button>
+      <select id="wInt"><option value="light" ${I.intensity==='light'?'selected':''}>Hafif</option><option value="mod" ${I.intensity==='mod'?'selected':''}>Orta</option><option value="heavy" ${I.intensity==='heavy'?'selected':''}>Kuvvetli</option></select>
+      <button data-g="1" class="warn">Ani rüzgâr</button>
+      <span class="calc" id="wxCalc"></span>
+    </span>`;
+  const num=(id,k)=>{ $(id).onchange=()=>{ const v=parseFloat($(id).value); if(isFinite(v)){ I[k]=v; wxChanged(); } }; };
+  num('wDir1','dirMin'); num('wDir2','dirMax'); num('wSp1','spdMin'); num('wSp2','spdMax'); num('wQnh','QNH'); num('wT','T'); num('wRH','RH'); num('wVis','vis'); num('wTx','Tmax'); num('wTn','Tmin'); num('wRwT','rwyT');
+  $('wRvr').onchange=()=>{ I.rvr=$('wRvr').value.trim()||'P2000'; wxChanged(); };
+  $('wCb').onchange=()=>{ I.cbase=$('wCb').value.trim()||'NCD'; wxChanged(); };
+  $('wRwy').onchange=()=>{ activeRwy=$('wRwy').value; wxChanged(); };
+  $('wInt').onchange=()=>{ I.intensity=$('wInt').value; wxChanged(); };
+  $('wxin').querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{ I.precip=b.dataset.p; if(b.dataset.p==='none') I.storm=false; wxChanged(true); });
+  $('wxin').querySelector('[data-s]').onclick=()=>{ I.storm=!I.storm; wxChanged(true); };
+  $('wxin').querySelector('[data-g]').onclick=()=>{ const d=norm360((I.dirMin+I.dirMax)/2+60+Math.random()*60), s=Math.max(I.spdMax,10)+10+Math.round(Math.random()*10);
+    I.gust={dir:d,spd:s,until:Date.now()+45000}; toast(`Ani rüzgâr değişimi: ${pad3(d)}° ${s} kt, 45 sn`); wxChanged(); };
+  $('wxin').classList.toggle('ro',wxAuto);
+}
+function wxChanged(rebuild){ const I=WX.inp; if(I.spdMax<I.spdMin) [I.spdMin,I.spdMax]=[I.spdMax,I.spdMin]; I.RH=clamp(I.RH,1,100);
+  if(rebuild) buildWxInputs(); renderAWOS(); broadcast(true); }
+document.querySelectorAll('#wxMode button').forEach(b=>b.onclick=()=>{ wxAuto=b.dataset.m==='auto'; document.querySelectorAll('#wxMode button').forEach(x=>x.classList.toggle('on',x===b)); buildWxInputs(); });
+// automatic mode: slow drift of the inputs (QNH, temperature, wind range)
+let autoT=0;
+setInterval(()=>{ WX.tick(1);
+  if(wxAuto&&++autoT%30===0){ const I=WX.inp, sh=Math.round((Math.random()-0.5)*10); I.dirMin=norm360(I.dirMin+sh); I.dirMax=norm360(I.dirMax+sh);
+    const ss=Math.round((Math.random()-0.5)*3); I.spdMin=Math.max(0,I.spdMin+ss); I.spdMax=Math.max(I.spdMin+1,I.spdMax+ss);
+    I.QNH=+(I.QNH+(Math.random()-0.5)*0.4).toFixed(1); I.T=+(I.T+(Math.random()-0.5)*0.3).toFixed(1); if(!$('wxin').contains(document.activeElement)) buildWxInputs(); broadcast(true); }
+  renderAWOS();
+  const d=new Date(), t=[d.getUTCHours(),d.getUTCMinutes(),d.getUTCSeconds()].map(v=>String(v).padStart(2,'0')).join(':');
+  $('awclock').textContent=t+' UTC'; $('clock').textContent=t+' UTC';
+},1000);
+
+// ======================================================================
+//  link to the ATC screen (same browser for now; server step makes it network-wide)
+// ======================================================================
+let bc=null; try{ bc=new BroadcastChannel('twrsim'); }catch(e){}
+let lastB=0;
+function broadcast(force){ const now=Date.now(); if(!force&&now-lastB<200) return; lastB=now;
+  const msg={t:'state',wx:{inp:WX.inp,cur:WX.cur,hist:WX.hist.slice(-600),active:activeRwy},
+    traffic:TR.map(a=>({id:a.id,kind:a.kind,cs:a.cs,type:a.type,pos:a.pos,hdg:a.hdg,alt:a.alt,air:!!a.air,ias:a.ias}))};
+  try{ bc&&bc.postMessage(msg); }catch(e){}
+  if(NET.on) NET.sendState(force?{wx:{inp:WX.inp},wxc:WX.cur,traffic:msg.traffic}:{wxc:WX.cur,traffic:msg.traffic});
+  try{ localStorage.setItem('twrsim.wx',JSON.stringify(msg.wx)); }catch(e){} }
+
+// ======================================================================
+//  comms (visual; audio arrives with the server step)
+// ======================================================================
+const fstate=$('fstate'); let pttDown=false;
+function setPTT(on){ if(NET.server) return; pttDown=on; fstate.classList.toggle('tx',on); fstate.textContent=on?'TX':'AVAILABLE'; }
+addEventListener('keydown',e=>{ if(e.code==='Space'&&!/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)){ e.preventDefault(); if(!pttDown) setPTT(true); } });
+addEventListener('keyup',e=>{ if(e.code==='Space') setPTT(false); });
+
+NET.start({role:'pilot', ui:{fstate, ptt:$('pPtt'), tel:$('pTel'), who:$('peers'), count:$('nWho')}, toast:m=>toast(m),
+  onState:st=>{ if(st&&st.wx&&st.wx.inp){ Object.assign(WX.inp,st.wx.inp); if(!$('wxin').contains(document.activeElement)) buildWxInputs(); } } });
+// toast
+let toastT=0; function toast(m){ const t=$('toast'); t.textContent=m; t.style.opacity=1; clearTimeout(toastT); toastT=setTimeout(()=>t.style.opacity=0,3500); }
+
+// boot
+resize(); buildWxInputs(); for(let i=0;i<5;i++) WX.tick(1); renderAWOS(); renderStrips(); renderFMS();
+requestAnimationFrame(draw); requestAnimationFrame(drawPFD);
+window.__sim={TR,RW,NODES,EDGES,STANDS,addAircraft,addVehicle,cmd,select,setMode,rebuildRoute,commitRoute,simStep,view,WX,joinVFR,dijkstra,nearestNode,get MODE(){return MODE;}};
+</script>
+</body>
+</html>
