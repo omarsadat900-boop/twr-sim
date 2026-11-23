@@ -1,7 +1,7 @@
 // ===================== TWR SİM network client (state sync, voice, floor control) =====================
 // Idle unless the page is served by the TWR SİM server (it needs /ws on the same host).
 const NET = (()=>{
-  const api={ server:false, on:false, id:null, admin:false, peers:[], floor:{radio:null,phone:null}, send(){}, sendState(){} };
+  const api={ server:false, on:false, id:null, admin:false, peers:[], floor:{radio:null,phone:null}, send(){}, sendState(){}, start(){} };
   const isServer=/^https?:$/.test(location.protocol) && !/claude\.ai|claudeusercontent|localhost:8765/.test(location.host);
   if(!isServer) return api; api.server=true;
   let ws=null, opts=null, mic=null, wantTx={radio:false,phone:false};
