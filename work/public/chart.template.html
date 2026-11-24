@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LTAC Esenboğa — Pist ve Taksi Yolu Haritası (Adım 1)</title>
+<style>
+  :root { --bg:#1d2b1f; --panel:#0f1720; --txt:#e8edf2; --muted:#93a1b0; --acc:#ffd23f; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--txt); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  #c { position:fixed; inset:0; width:100%; height:100%; cursor:grab; display:block; }
+  #c.drag { cursor:grabbing; }
+  .panel { position:fixed; top:12px; left:12px; max-height:calc(100vh - 110px); overflow:auto; background:rgba(15,23,32,.92); border:1px solid #2b3a48; border-radius:10px; padding:12px 14px; width:290px; font-size:13px; line-height:1.45; }
+  .panel h1 { font-size:15px; margin:0 0 2px; }
+  .panel .sub { color:var(--muted); font-size:12px; margin-bottom:10px; }
+  .panel label { display:flex; align-items:center; gap:8px; margin:3px 0; cursor:pointer; }
+  .panel hr { border:0; border-top:1px solid #2b3a48; margin:10px 0; }
+  .sw { display:inline-block; width:14px; height:4px; border-radius:2px; }
+  #info { position:fixed; bottom:12px; left:12px; background:rgba(15,23,32,.92); border:1px solid #2b3a48; border-radius:10px; padding:10px 14px; font-size:13px; min-width:290px; max-width:420px; }
+  #info b { color:var(--acc); }
+  .help { position:fixed; bottom:12px; right:12px; background:rgba(15,23,32,.85); border:1px solid #2b3a48; border-radius:10px; padding:8px 12px; font-size:12px; color:var(--muted); }
+  kbd { background:#24313d; border:1px solid #3a4a59; border-radius:4px; padding:0 5px; font-size:11px; color:var(--txt); }
+  select { background:#24313d; color:var(--txt); border:1px solid #3a4a59; border-radius:6px; padding:3px 6px; width:100%; margin-top:4px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="panel">
+  <h1>LTAC · Ankara Esenboğa</h1>
+  <div class="sub">Pistler, taksi yolları, park pozisyonları, bekleme noktaları ve binalar</div>
+  <label><input type="checkbox" id="tPave" checked> Pist ve taksi yüzeyleri</label>
+  <label><input type="checkbox" id="tBld" checked> <span class="sw" style="background:#4f7fb3"></span> Binalar</label>
+  <label><input type="checkbox" id="tCL" checked> <span class="sw" style="background:#ffd23f"></span> Taksi orta hatları (rota)</label>
+  <label><input type="checkbox" id="tNames" checked> Taksi yolu isimleri</label>
+  <label><input type="checkbox" id="tHP" checked> <span class="sw" style="background:#ff3b3b"></span> Pist bekleme noktaları (HP)</label>
+  <label><input type="checkbox" id="tIHP" checked> <span class="sw" style="background:#ffa424"></span> Ara bekleme noktaları (IHP)</label>
+  <label><input type="checkbox" id="tStands" checked> <span class="sw" style="background:#ff6fb5"></span> Park pozisyonları ve girişleri</label>
+  <label><input type="checkbox" id="tTL" checked> <span class="sw" style="background:#4cc3ff"></span> Apron taksi hatları</label>
+  <label><input type="checkbox" id="tNodes"> Rota düğüm noktaları</label>
+  <label><input type="checkbox" id="tRings"> 5 NM ve 10 NM halkaları</label>
+  <hr>
+  Taksi yolunu vurgula:
+  <select id="hl"><option value="">— hiçbiri —</option></select>
+  <div style="margin-top:8px">Park pozisyonuna git:</div>
+  <select id="goStand"><option value="">— seç —</option></select>
+  <div style="margin-top:8px">Bekleme noktasına git:</div>
+  <select id="goHP"><option value="">— seç —</option></select>
+  <hr>
+  <div style="color:var(--muted);font-size:12px" id="stats"></div>
+</div>
+
+<div id="info">Bir taksi yoluna, bekleme noktasına veya piste tıkla.</div>
+<div class="help"><kbd>Sürükle</kbd> kaydır · <kbd>Tekerlek</kbd> yakınlaştır · <kbd>R</kbd> haritayı kuzeye/piste göre çevir · <kbd>0</kbd> sıfırla</div>
+
+<script>
+const DATA = __DATA__;
+const NM = 1852;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W, H, DPR;
+// view: center (metres), scale (px per metre), rotation (rad)
+const RWY_HDG = Math.atan2(DATA.runways[0].thr['21L'].xy[0]-DATA.runways[0].thr['03R'].xy[0], DATA.runways[0].thr['21L'].xy[1]-DATA.runways[0].thr['03R'].xy[1]);
+const view = { cx:1100, cy:1550, s:0.25, rot:0 };
+function resetView(){ view.cx=1100; view.cy=1550; view.rot=0; view.s=Math.min(W/2700, H/3600)*0.95; }
+
+function resize(){ DPR=window.devicePixelRatio||1; W=innerWidth; H=innerHeight; cv.width=W*DPR; cv.height=H*DPR; draw(); }
+function w2s(x,y){ const dx=x-view.cx, dy=y-view.cy; const c=Math.cos(view.rot), s=Math.sin(view.rot);
+  const rx=dx*c-dy*s, ry=dx*s+dy*c; return [W/2+rx*view.s, H/2-ry*view.s]; }
+function s2w(px,py){ const rx=(px-W/2)/view.s, ry=-(py-H/2)/view.s; const c=Math.cos(-view.rot), s=Math.sin(-view.rot);
+  return [view.cx+rx*c-ry*s, view.cy+rx*s+ry*c]; }
+
+const opt = { pave:true, bld:true, cl:true, names:true, hp:true, ihp:true, stands:true, tl:true, nodes:false, rings:false, hl:'', sel:null };
+
+function poly(pts, close=true){ ctx.beginPath(); pts.forEach((p,i)=>{ const [x,y]=w2s(p[0],p[1]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); if(close) ctx.closePath(); }
+
+function runwayGeom(r){
+  const a=r.thr[r.ends[0]].xy, b=r.thr[r.ends[1]].xy;
+  const L=Math.hypot(b[0]-a[0],b[1]-a[1]); const u=[(b[0]-a[0])/L,(b[1]-a[1])/L]; const n=[-u[1],u[0]];
+  return {a,b,L,u,n};
+}
+function rect(a,u,n,from,to,half){ // along-track [from,to], cross-track ±half
+  return [[a[0]+u[0]*from+n[0]*half,a[1]+u[1]*from+n[1]*half],[a[0]+u[0]*to+n[0]*half,a[1]+u[1]*to+n[1]*half],
+          [a[0]+u[0]*to-n[0]*half,a[1]+u[1]*to-n[1]*half],[a[0]+u[0]*from-n[0]*half,a[1]+u[1]*from-n[1]*half]];
+}
+
+function drawRunway(r){
+  const g=runwayGeom(r), hw=r.width/2;
+  // stopways (hatched-ish)
+  ctx.fillStyle='#3a3f45';
+  poly(rect(g.a,g.u,g.n,-r.stopway,0,hw)); ctx.fill();
+  poly(rect(g.a,g.u,g.n,g.L,g.L+r.stopway,hw)); ctx.fill();
+  // surface
+  ctx.fillStyle='#2b2f33'; poly(rect(g.a,g.u,g.n,0,g.L,hw)); ctx.fill();
+  if(view.s<0.12) return;
+  ctx.fillStyle='#f4f4f4';
+  // edge lines
+  poly(rect(g.a,g.u,g.n,0,g.L,hw-0.5)); ctx.strokeStyle='#f4f4f4'; ctx.lineWidth=Math.max(0.6,0.9*view.s); ctx.stroke();
+  // centerline dashes 30 m stripe, 20 m gap
+  for(let k=150;k<g.L-150;k+=50){ poly(rect(g.a,g.u,g.n,k,k+30,0.45)); ctx.fill(); }
+  // threshold piano keys & TDZ & aiming points at both ends
+  for(const end of [0,1]){
+    const a=end?g.b:g.a, u=end?[-g.u[0],-g.u[1]]:g.u, n=end?[-g.n[0],-g.n[1]]:g.n;
+    const stripes=r.width>=60?16:12; const sw=1.8, gap=(r.width-6-stripes*sw)/(stripes-1);
+    for(let i=0;i<stripes;i++){ const off=-hw+3+i*(sw+gap)+sw/2; const c=[a[0]+n[0]*off,a[1]+n[1]*off]; poly(rect(c,u,n,6,36,sw/2)); ctx.fill(); }
+    // aiming point 400m
+    for(const s of [-1,1]){ const c=[a[0]+n[0]*s*(hw*0.45),a[1]+n[1]*s*(hw*0.45)]; poly(rect(c,u,n,400,460,5)); ctx.fill(); }
+    // TDZ pairs at 150,300,450..900 (simplified)
+    for(const d of [150,300,600,750,900]){ for(const s of [-1,1]){ const c=[a[0]+n[0]*s*(hw*0.45),a[1]+n[1]*s*(hw*0.45)]; poly(rect(c,u,n,d,d+22,1.5)); ctx.fill(); } }
+    // designator
+    if(view.s>0.35){
+      const label=r.ends[end]; const p=[a[0]+u[0]*58,a[1]+u[1]*58]; const [sx,sy]=w2s(p[0],p[1]);
+      ctx.save(); ctx.translate(sx,sy);
+      const ang=Math.atan2(u[0],u[1]); ctx.rotate(ang+view.rot); // text reads approaching along u
+      ctx.font=`bold ${Math.max(8,18*view.s)}px system-ui`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(label,0,0); ctx.restore();
+    }
+  }
+}
+
+function edgeColor(e){ return e.rwy ? null : (opt.hl && e.name===opt.hl ? '#00e5ff' : '#ffd23f'); }
+
+function draw(){
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle='#2c3b2a'; ctx.fillRect(0,0,W,H);
+  if(opt.rings){
+    const c=DATA.runways[0], m=[(c.thr['03R'].xy[0]+c.thr['21L'].xy[0])/2,(c.thr['03R'].xy[1]+c.thr['21L'].xy[1])/2];
+    const [sx,sy]=w2s(m[0],m[1]);
+    for(const r of [5,10]){ ctx.beginPath(); ctx.arc(sx,sy,r*NM*view.s,0,Math.PI*2); ctx.strokeStyle='rgba(120,200,255,.6)'; ctx.setLineDash([8,6]); ctx.lineWidth=1.5; ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle='rgba(160,215,255,.9)'; ctx.font='12px system-ui'; ctx.fillText(r+' NM',sx+4,sy-r*NM*view.s+14); }
+  }
+  if(opt.pave){
+    ctx.fillStyle='#8f9499'; for(const p of DATA.pavement){ poly(p); ctx.fill(); }
+    ctx.fillStyle='#2c3b2a'; for(const p of DATA.holes){ poly(p); ctx.fill(); }
+    ctx.strokeStyle='#8f9499'; ctx.lineCap='butt';
+    for(const l of (DATA.pave_lines||[])){ poly(l.pts,false); ctx.lineWidth=l.w*view.s; ctx.stroke(); }
+    for(const r of DATA.runways) drawRunway(r);
+  }
+  if(opt.bld && DATA.buildings){
+    ctx.lineWidth=1; ctx.lineJoin='round';
+    for(const b of DATA.buildings){ const sel=opt.sel&&opt.sel.type==='bld'&&opt.sel.id===b.id;
+      poly(b.pts); ctx.fillStyle=sel?'#00c87a':'#4f7fb3'; ctx.fill(); ctx.strokeStyle='#22405f'; ctx.stroke(); }
+  }
+  // taxi centerlines
+  if(opt.cl){
+    for(const e of DATA.taxi.edges){
+      if(e.kind==='runway') continue;
+      if(e.kind==='leadin' && !opt.stands) continue;
+      if(e.kind==='taxilane' && !opt.tl) continue;
+      const hl=opt.hl && e.name===opt.hl; const sel=opt.sel&&opt.sel.type==='edge'&&opt.sel.name===e.name;
+      const base = e.kind==='taxilane' ? '#4cc3ff' : e.kind==='leadin' ? '#ff6fb5' : '#ffd23f';
+      poly(e.pts,false); ctx.strokeStyle=sel?'#00ff88':hl?'#00e5ff':base;
+      const w = e.kind==='leadin' ? Math.max(0.8,Math.min(1.6,0.4*view.s*4)) : Math.max(1,Math.min(2.2,0.6*view.s*4));
+      ctx.lineWidth=(hl||sel)?3.5:w; ctx.stroke();
+    }
+  }
+  if(opt.hp||opt.ihp){
+    for(const h of DATA.holding_points){
+      if(h.type==='intermediate' ? !opt.ihp : !opt.hp) continue;
+      const n=h._n; const hw=h.type==='runway'?14:11;
+      const p1=w2s(h.xy[0]+n[0]*hw,h.xy[1]+n[1]*hw), p2=w2s(h.xy[0]-n[0]*hw,h.xy[1]-n[1]*hw);
+      const sel=opt.sel&&opt.sel.type==='hp'&&opt.sel.id===h.id;
+      ctx.strokeStyle=sel?'#00ff88':(h.type==='runway'?'#ff3b3b':'#ffa424'); ctx.lineWidth=Math.max(2.5,3*view.s*2); ctx.beginPath(); ctx.moveTo(...p1); ctx.lineTo(...p2); ctx.stroke();
+      if(view.s>0.45){ ctx.fillStyle=h.type==='runway'?'#ffc2c2':'#ffd9a3'; ctx.font='11px system-ui'; const [sx,sy]=w2s(...h.xy); ctx.fillText(h.id,sx+9,sy-7); }
+    }
+  }
+  if(opt.stands){
+    for(const st of DATA.stands){
+      const [sx,sy]=w2s(...st.xy); const sel=opt.sel&&opt.sel.type==='stand'&&opt.sel.id===st.id;
+      const r=Math.max(3,Math.min(9,6*view.s));
+      ctx.save(); ctx.translate(sx,sy); ctx.rotate(st.hdg*Math.PI/180+view.rot);
+      ctx.beginPath(); ctx.moveTo(0,-r*1.5); ctx.lineTo(r,r); ctx.lineTo(0,r*0.4); ctx.lineTo(-r,r); ctx.closePath();
+      ctx.fillStyle=sel?'#00ff88':'#ff6fb5'; ctx.fill(); ctx.lineWidth=1; ctx.strokeStyle='#2a0b1a'; ctx.stroke(); ctx.restore();
+      if(view.s>0.55 || sel){ ctx.font='bold 11px system-ui'; ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(0,0,0,.75)'; ctx.lineWidth=3;
+        ctx.strokeText(st.id,sx+r+2,sy+4); ctx.fillText(st.id,sx+r+2,sy+4); }
+    }
+    if(view.s>0.12){
+      ctx.font='bold 13px system-ui'; ctx.textAlign='center';
+      for(const [ap,c] of APRONS){ const [sx,sy]=w2s(c[0],c[1]); ctx.fillStyle='rgba(255,255,255,.85)'; ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.lineWidth=3; ctx.strokeText(ap,sx,sy); ctx.fillText(ap,sx,sy); }
+      ctx.textAlign='left';
+    }
+  }
+  if(opt.nodes){
+    for(const n of DATA.taxi.nodes){ const [x,y]=w2s(n.x,n.y); ctx.beginPath(); ctx.arc(x,y,3.5,0,7); ctx.fillStyle=n.thr?'#ff8c00':'#ff5ec8'; ctx.fill(); }
+  }
+  if(opt.names){
+    const done={};
+    for(const e of DATA.taxi.edges){
+      if(e.kind!=='taxiway') continue;
+      // label each named segment once per ~400m
+      let len=0; for(let i=0;i<e.pts.length-1;i++) len+=Math.hypot(e.pts[i+1][0]-e.pts[i][0],e.pts[i+1][1]-e.pts[i][1]);
+      let t=len/2, i=0; for(;i<e.pts.length-1;i++){ const s=Math.hypot(e.pts[i+1][0]-e.pts[i][0],e.pts[i+1][1]-e.pts[i][1]); if(t<=s) break; t-=s; }
+      const a=e.pts[i], b=e.pts[Math.min(i+1,e.pts.length-1)]; const s=Math.hypot(b[0]-a[0],b[1]-a[1])||1;
+      const p=[a[0]+(b[0]-a[0])*t/s, a[1]+(b[1]-a[1])*t/s];
+      const key=e.name; const [sx,sy]=w2s(...p);
+      if(done[key] && done[key].some(q=>Math.hypot(q[0]-sx,q[1]-sy)<120)) continue;
+      (done[key]=done[key]||[]).push([sx,sy]);
+      ctx.font='bold 12px system-ui'; const tw=ctx.measureText(key).width+8;
+      ctx.fillStyle='#111'; ctx.fillRect(sx-tw/2,sy-9,tw,18); ctx.strokeStyle='#ffd23f'; ctx.lineWidth=1; ctx.strokeRect(sx-tw/2,sy-9,tw,18);
+      ctx.fillStyle='#ffd23f'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(key,sx,sy); ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    }
+  }
+  // north arrow
+  ctx.save(); ctx.translate(W-50,60); ctx.rotate(-view.rot); ctx.fillStyle='#e8edf2'; ctx.beginPath(); ctx.moveTo(0,-22); ctx.lineTo(8,10); ctx.lineTo(0,4); ctx.lineTo(-8,10); ctx.closePath(); ctx.fill();
+  ctx.font='bold 12px system-ui'; ctx.textAlign='center'; ctx.fillText('N',0,-28); ctx.restore();
+  // scale bar
+  const m=500; const px=m*view.s; ctx.fillStyle='#e8edf2'; ctx.fillRect(W-30-px,H-70,px,3); ctx.font='11px system-ui'; ctx.textAlign='right'; ctx.fillText('500 m',W-30,H-76); ctx.textAlign='left';
+}
+
+// interaction
+let drag=null;
+cv.addEventListener('mousedown',e=>{ drag={x:e.clientX,y:e.clientY,cx:view.cx,cy:view.cy,moved:false}; cv.classList.add('drag'); });
+addEventListener('mousemove',e=>{ if(!drag) return; const dx=e.clientX-drag.x, dy=e.clientY-drag.y; if(Math.hypot(dx,dy)>3) drag.moved=true;
+  const c=Math.cos(-view.rot), s=Math.sin(-view.rot); const rx=-dx/view.s, ry=dy/view.s; view.cx=drag.cx+rx*c-ry*s; view.cy=drag.cy+rx*s+ry*c; draw(); });
+addEventListener('mouseup',e=>{ if(drag && !drag.moved) pick(e.clientX,e.clientY); drag=null; cv.classList.remove('drag'); });
+cv.addEventListener('wheel',e=>{ e.preventDefault(); const [wx,wy]=s2w(e.clientX,e.clientY); const f=Math.exp(-e.deltaY*0.0015); view.s=Math.max(0.02,Math.min(12,view.s*f));
+  const [nx,ny]=s2w(e.clientX,e.clientY); view.cx+=wx-nx; view.cy+=wy-ny; draw(); },{passive:false});
+// touch (iPad)
+let pinch=null;
+cv.addEventListener('touchstart',e=>{ if(e.touches.length===1){ const t=e.touches[0]; drag={x:t.clientX,y:t.clientY,cx:view.cx,cy:view.cy,moved:false}; }
+  else if(e.touches.length===2){ const [a,b]=e.touches; pinch={d:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),s:view.s}; drag=null; } },{passive:true});
+cv.addEventListener('touchmove',e=>{ e.preventDefault(); if(pinch&&e.touches.length===2){ const [a,b]=e.touches; view.s=Math.max(0.02,Math.min(12,pinch.s*Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY)/pinch.d)); draw(); }
+  else if(drag&&e.touches.length===1){ const t=e.touches[0]; const dx=t.clientX-drag.x, dy=t.clientY-drag.y; if(Math.hypot(dx,dy)>3) drag.moved=true; const c=Math.cos(-view.rot), s=Math.sin(-view.rot); const rx=-dx/view.s, ry=dy/view.s; view.cx=drag.cx+rx*c-ry*s; view.cy=drag.cy+rx*s+ry*c; draw(); } },{passive:false});
+cv.addEventListener('touchend',e=>{ if(drag&&!drag.moved){ pick(drag.x,drag.y);} if(e.touches.length===0){drag=null;pinch=null;} });
+
+addEventListener('keydown',e=>{
+  if(e.key==='r'||e.key==='R'){ view.rot = view.rot ? 0 : -RWY_HDG + Math.PI/2; draw(); }
+  if(e.key==='0'){ resetView(); draw(); }
+});
+
+function distSeg(p,a,b){ const vx=b[0]-a[0], vy=b[1]-a[1]; const L=vx*vx+vy*vy||1; let t=((p[0]-a[0])*vx+(p[1]-a[1])*vy)/L; t=Math.max(0,Math.min(1,t)); return Math.hypot(p[0]-a[0]-vx*t,p[1]-a[1]-vy*t); }
+const info=document.getElementById('info');
+function pick(px,py){
+  const p=s2w(px,py); const tol=12/view.s;
+  for(const st of DATA.stands){ if(opt.stands && Math.hypot(st.xy[0]-p[0],st.xy[1]-p[1])<Math.max(tol,8)){ opt.sel={type:'stand',id:st.id};
+    info.innerHTML=`Park pozisyonu <b>${st.id}</b> — ${st.apron}<br>Burun yönü ${String(Math.round(st.hdg)).padStart(3,'0')}° · giriş çizgisi ${Math.round(st.lead_len)} m${st.note?'<br><i>'+st.note+'</i>':''}`; draw(); return; } }
+  for(const h of DATA.holding_points){ if(Math.hypot(h.xy[0]-p[0],h.xy[1]-p[1])<tol*1.3){ opt.sel={type:'hp',id:h.id};
+    info.innerHTML = h.type==='runway' ? `<b>${h.id}</b> — pist bekleme noktası<br>Taksi yolu <b>${h.twy}</b> · korunan pist <b>RWY ${h.rwy}</b> · pist ekseninden ${Math.round(h.dist_cl)} m`
+                                       : `<b>${h.id}</b> — ara bekleme noktası (intermediate)<br>Taksi yolu <b>${h.twy==='*'?'A / Apron 1':h.twy}</b>`; draw(); return; } }
+  let best=null,bd=tol;
+  DATA.taxi.edges.forEach(e=>{ for(let i=0;i<e.pts.length-1;i++){ const d=distSeg(p,e.pts[i],e.pts[i+1]); if(d<bd){bd=d;best=e;} } });
+  if(best && best.kind!=='runway'){ opt.sel={type:'edge',name:best.name};
+    if(best.kind==='leadin'){ const id=best.name.replace('STAND ',''); opt.sel={type:'stand',id}; const st=DATA.stands.find(s=>s.id===id); info.innerHTML=`Park pozisyonu <b>${id}</b> giriş çizgisi — ${st?st.apron:''}`; draw(); return; }
+    const segs=DATA.taxi.edges.filter(e=>e.name===best.name); let L=0; segs.forEach(e=>{for(let i=0;i<e.pts.length-1;i++) L+=Math.hypot(e.pts[i+1][0]-e.pts[i][0],e.pts[i+1][1]-e.pts[i][1]);});
+    const hps=DATA.holding_points.filter(h=>h.twy===best.name).map(h=>h.id).join(', ')||'—';
+    const what = best.kind==='taxilane' ? 'Apron taksi hattı' : 'Taksi yolu';
+    info.innerHTML=`${what} <b>${best.name}</b><br>Toplam orta hat: ${Math.round(L)} m · Bekleme noktaları: ${hps}`; draw(); return; }
+  if(opt.bld) for(const b of (DATA.buildings||[])){ if(inPoly(p,b.pts)){ opt.sel={type:'bld',id:b.id};
+    info.innerHTML=`Bina <b>${b.id}</b> · taban ${Math.round(b.area)} m² · yükseklik ~${b.h} m (tahmini)<br><i>Kaynak: AIP AD 2 LTAC ADC</i>`; draw(); return; } }
+  for(const r of DATA.runways){ const g=runwayGeom(r); if(distSeg(p,g.a,g.b)<r.width/2+tol){ opt.sel=null;
+    info.innerHTML=`<b>RWY ${r.id}</b> — ${r.length} × ${r.width} m, stopway ${r.stopway} m<br>QFU ${r.qfu[0].toFixed(2)}° / ${r.qfu[1].toFixed(2)}° · Eşik irtifası ${r.elev_ft[0]}′ / ${r.elev_ft[1]}′`; draw(); return; } }
+  opt.sel=null; info.textContent='Bir taksi yoluna, bekleme noktasına veya piste tıkla.'; draw();
+}
+
+// controls
+const bind=(id,k)=>document.getElementById(id).addEventListener('change',e=>{opt[k]=e.target.checked; draw();});
+bind('tPave','pave'); bind('tCL','cl'); bind('tNames','names'); bind('tHP','hp'); bind('tNodes','nodes'); bind('tRings','rings');
+const sel=document.getElementById('hl');
+[...new Set(DATA.taxi.edges.filter(e=>e.kind==='taxiway').map(e=>e.name))].sort((a,b)=>a.localeCompare(b,'tr',{numeric:true})).forEach(n=>{ const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); });
+sel.addEventListener('change',()=>{ opt.hl=sel.value; draw(); });
+
+// holding point bar orientation = perpendicular to the taxi edge it sits on
+function distSegL(p,a,b){ const vx=b[0]-a[0], vy=b[1]-a[1]; const L=vx*vx+vy*vy||1; let t=((p[0]-a[0])*vx+(p[1]-a[1])*vy)/L; t=Math.max(0,Math.min(1,t)); return Math.hypot(p[0]-a[0]-vx*t,p[1]-a[1]-vy*t); }
+for(const h of DATA.holding_points){ let bd=1e9, dir=[1,0];
+  for(const e of DATA.taxi.edges){ if(e.kind==='runway'||e.kind==='leadin') continue; for(let i=0;i<e.pts.length-1;i++){ const a=e.pts[i], b=e.pts[i+1]; const d=distSegL(h.xy,a,b); if(d<bd){ bd=d; const L=Math.hypot(b[0]-a[0],b[1]-a[1])||1; dir=[(b[0]-a[0])/L,(b[1]-a[1])/L]; } } }
+  h._n=[-dir[1],dir[0]]; }
+const APRONS=[]; { const acc={}; for(const st of DATA.stands){ (acc[st.apron]=acc[st.apron]||[]).push(st.xy); }
+  const off={'APRON 1':[0,-45],'APRON 2':[-55,0],'APRON 3':[45,-30],'APRON 4':[40,-80],'APRON 5':[-90,40],'APRON 6':[-70,40],'APRON 7':[-60,40],'APRON YKK':[-50,-40]};
+  for(const k in acc){ const a=acc[k]; const c=[a.reduce((s,p)=>s+p[0],0)/a.length, a.reduce((s,p)=>s+p[1],0)/a.length]; const o=off[k]||[0,0]; APRONS.push([k,[c[0]+o[0],c[1]+o[1]]]); } }
+const gs=document.getElementById('goStand');
+const byAp={}; DATA.stands.forEach(st=>{(byAp[st.apron]=byAp[st.apron]||[]).push(st);});
+Object.keys(byAp).sort().forEach(ap=>{ const og=document.createElement('optgroup'); og.label=ap; byAp[ap].forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=st.id; og.appendChild(o); }); gs.appendChild(og); });
+gs.addEventListener('change',()=>{ const st=DATA.stands.find(s=>s.id===gs.value); if(!st) return; view.cx=st.xy[0]; view.cy=st.xy[1]; view.s=Math.max(view.s,1.4); const [x,y]=w2s(...st.xy); pick(x,y); });
+const gh=document.getElementById('goHP');
+DATA.holding_points.slice().sort((a,b)=>a.id.localeCompare(b.id,'en',{numeric:true})).forEach(h=>{ const o=document.createElement('option'); o.value=h.id; o.textContent=h.id+(h.type==='runway'?'  (RWY '+h.rwy+')':'  (ara)'); gh.appendChild(o); });
+gh.addEventListener('change',()=>{ const h=DATA.holding_points.find(x=>x.id===gh.value); if(!h) return; view.cx=h.xy[0]; view.cy=h.xy[1]; view.s=Math.max(view.s,1.4); const [x,y]=w2s(...h.xy); pick(x,y); });
+bind('tIHP','ihp'); bind('tStands','stands'); bind('tTL','tl'); bind('tBld','bld');
+function inPoly(p,pts){ let c=false; for(let i=0,j=pts.length-1;i<pts.length;j=i++){ const a=pts[i], b=pts[j];
+  if(((a[1]>p[1])!==(b[1]>p[1])) && (p[0] < (b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])) c=!c; } return c; }
+document.getElementById('stats').innerHTML=`${DATA.stands.length} park pozisyonu · ${DATA.holding_points.filter(h=>h.type==='runway').length} pist HP · ${DATA.holding_points.filter(h=>h.type!=='runway').length} ara HP · ${(DATA.buildings||[]).length} bina<br>Eşikler: AIP AD 2 LTAC ADC (AIRAC 09/22). Geometri: Jeppesen 10-9 ve 10-9B/C/D/E.<br>Kaldırılan taksi yolları: ${(DATA.removed_taxiways||[]).join(', ')} (kullanım dışı).`;
+addEventListener('resize',resize);
+W=innerWidth;H=innerHeight; resetView(); resize();
+</script>
+</body>
+</html>

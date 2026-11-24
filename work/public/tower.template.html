@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>LTAC ATC İstasyonu</title>
+<style>
+  :root { --side:#141d29; --side2:#1b2635; --line:#2d3b4c; --txt:#e9eef3; --muted:#93a3b4; --acc:#ff8a1f; --ok:#1f9d48; --busy:#d9262b; --paper:#f4f5f2; --ink:#111; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; overflow:hidden; background:var(--side); color:var(--txt); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  #app { display:flex; height:100%; }
+
+  /* ---------- left AWOS panel ---------- */
+  #side { width:372px; flex:none; height:100%; overflow-y:auto; background:var(--side); border-right:1px solid var(--line); padding:12px 12px 24px; }
+  #side.hide { display:none; }
+  #side { order:2; border-right:0; border-left:1px solid var(--line); }
+  .awos .aw-card { padding:3px 4px 4px; }
+  .awos .aw table { font-size:10.5px; }
+  .hdr { display:flex; align-items:center; justify-content:space-between; }
+  .hdr h1 { margin:0; font-size:17px; letter-spacing:.02em; }
+  .hdr .me { color:var(--muted); font-size:13px; }
+  h2 { font-size:13px; letter-spacing:.08em; color:var(--muted); margin:16px 0 8px; font-weight:700; }
+  .note { font-size:12px; color:var(--muted); margin:6px 0 0; line-height:1.35; }
+  .rwys { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  .rwys button { background:var(--side2); color:var(--muted); border:1px solid var(--line); border-radius:7px; padding:9px 0; font-size:15px; font-weight:600; cursor:pointer; }
+  .rwys button.on { background:var(--acc); color:#1a1006; border-color:var(--acc); }
+  .awos { background:var(--paper); color:var(--ink); border-radius:6px; padding:6px; }
+  .clock { text-align:center; font:700 34px/1.15 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; padding:6px 0 8px; border-bottom:1px solid #cfd2cc; font-variant-numeric:tabular-nums; }
+  .dials { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; }
+  .dial { border:1px solid #c9ccc6; border-radius:4px; padding:4px; background:#fbfbf9; }
+  .dial .rn { font-weight:800; font-size:18px; padding-left:2px; }
+  .dial svg { display:block; width:100%; height:auto; }
+  table.t { width:100%; border-collapse:collapse; font-size:11.5px; margin-top:4px; font-variant-numeric:tabular-nums; }
+  table.t td { border:1px solid #c9ccc6; padding:3px 4px; }
+  table.t td.v { text-align:center; font-weight:700; }
+  table.t td.u { text-align:right; color:#444; }
+  table.t tr.gap td { border:0; padding:2px; }
+  .met { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; }
+  .met table.t td:first-child { white-space:nowrap; }
+  tr.lr td { border-top:2px solid #d33 !important; } tr.lb td { border-top:2px solid #2b5fd9 !important; } tr.ly td { border-top:2px solid #e6b400 !important; }
+  details { margin-top:14px; }
+  summary { cursor:pointer; font-size:14px; font-weight:600; list-style:none; }
+  summary::before { content:'▸ '; color:var(--muted); } details[open] summary::before { content:'▾ '; }
+  .who { display:flex; align-items:center; justify-content:space-between; background:var(--side2); border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-top:8px; font-size:14px; }
+  .who .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#2ecc71; margin-right:8px; }
+  .tag { font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:4px; padding:1px 6px; }
+  .set { margin-top:12px; font-size:13px; }
+  .set b { color:#fff; }
+  .set input[type=range] { width:100%; accent-color:var(--acc); margin-top:6px; }
+
+  /* ---------- 3D tower view ---------- */
+  #stage { position:relative; flex:1; min-width:0; height:100%; background:#9fb3c8; }
+  #view { position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:grab; }
+  #view.drag { cursor:grabbing; }
+  #fx { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:1; }
+  .ov { position:absolute; z-index:2; }
+  #status { top:12px; left:12px; background:rgba(16,22,30,.86); border:1px solid #2d3b4c; border-radius:6px; padding:7px 11px;
+            font:600 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; letter-spacing:.03em; }
+  #toggle { top:52px; left:12px; background:rgba(16,22,30,.86); color:var(--txt); border:1px solid #2d3b4c; border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer; }
+  #nav { top:10px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:10px; background:rgba(16,22,30,.72); border:1px solid #2d3b4c; border-radius:12px; padding:5px 10px; }
+  #nav .deg { font:700 15px ui-monospace,Menlo,monospace; min-width:44px; text-align:center; }
+  .pad { display:grid; grid-template-columns:repeat(3,28px); grid-template-rows:repeat(3,24px); gap:2px; }
+  .pad button { border:1px solid #3a4a59; background:#1b2733; color:var(--txt); border-radius:6px; font-size:11px; padding:0; cursor:pointer; touch-action:none; }
+  .pad button.on { background:#34506a; }
+  .pad .up{grid-column:2;grid-row:1} .pad .lt{grid-column:1;grid-row:2} .pad .rt{grid-column:3;grid-row:2} .pad .dn{grid-column:2;grid-row:3}
+  .pad .mid { grid-column:2; grid-row:2; display:flex; align-items:center; justify-content:center; font-size:9px; color:var(--muted); }
+  #freq { top:12px; right:12px; display:flex; align-items:stretch; background:#fff; color:#111; border:2px solid #fff; border-radius:6px; overflow:hidden;
+          font:700 19px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; box-shadow:0 2px 8px rgba(0,0,0,.25); }
+  #fstate { background:var(--ok); color:#fff; padding:6px 10px; font-size:14px; letter-spacing:.08em; display:flex; align-items:center; }
+  #fstate.busy { background:var(--busy); } #fstate.tx { background:#e08a00; }
+  #tel.busy { background:#7a1d1f; border-color:#d9262b; }
+  .who { flex-wrap:wrap; gap:6px; } .who .adm { display:flex; gap:4px; width:100%; } .who .adm button { flex:1; font-size:11px; padding:4px; border-radius:5px; border:1px solid var(--line); background:var(--side); color:var(--txt); cursor:pointer; }
+  #freq .f { padding:6px 12px; }
+  #comms { right:12px; bottom:12px; display:flex; gap:10px; }
+  .big { width:118px; height:66px; border-radius:8px; border:1px solid #39485a; background:rgba(16,22,30,.9); color:#fff; font-size:15px; line-height:1.35; cursor:pointer; touch-action:none; }
+  .big small { display:block; font-size:12px; color:var(--muted); }
+  #ptt.on { background:var(--busy); border-color:#ff8f92; } #ptt.on small { color:#ffe1e1; }
+  #tel.on { background:var(--ok); border-color:#8ff0b0; } #tel.on small { color:#e1ffe9; }
+  #help { left:12px; bottom:12px; background:rgba(16,22,30,.86); border:1px solid #2d3b4c; border-radius:6px; padding:7px 10px; font-size:12px; color:#c9d4de; max-width:calc(100% - 290px); }
+  #err { position:absolute; inset:0; display:none; align-items:center; justify-content:center; text-align:center; padding:24px; background:#1d2b1f; z-index:5; }
+  @media (max-width:900px){ #side { width:310px; } #help { display:none; } }
+  @media (max-width:640px){ #app { flex-direction:column-reverse; } #side { width:100%; height:48%; border-right:0; border-top:1px solid var(--line); } #nav { top:auto; bottom:90px; } }
+</style>
+</head>
+<body>
+<div id="app">
+<aside id="side">
+  <div class="hdr"><h1>LTAC TWR</h1><span class="me">ATC</span></div>
+
+  <h2>AKTİF PİST</h2>
+  <div class="rwys" id="rwys"></div>
+  <p class="note" id="rwyHint"></p>
+
+  <h2>AWOS / ATIS</h2>
+  <div class="awos aw">
+    <div class="clock" id="clock">--:--:-- UTC</div>
+    <div class="dials" id="dials"></div>
+    <div class="met" id="met"></div>
+  </div>
+  <p class="note" id="wxSrc">Hava durumu sadece pilot (instructor) tarafından değiştirilir. Pilot bağlanana kadar varsayılan değerler gösterilir.</p>
+
+  <details open>
+    <summary>Katılımcılar (<span id="nWho">1</span>)</summary>
+    <div id="whoList"><div class="who"><span><span class="dot"></span>Sen</span><span class="tag">ATC</span></div></div>
+    <p class="note" id="whoNote">Herkes aynı linkten girince burada görünür. Yönetici (★) konuşma iznini açıp kapatabilir, ses kesebilir.</p>
+  </details>
+
+  <details open>
+    <summary>Ayarlar</summary>
+    <div class="set">Kule göz yüksekliği: <b><span id="sH">400</span> m</b><input id="rH" type="range" min="5" max="600" step="1" value="400"></div>
+    <div class="set">Dönme hassasiyeti: <b><span id="sT">1.00</span>×</b><input id="rT" type="range" min="0.25" max="3" step="0.05" value="1"></div>
+    <div class="set">Zoom hassasiyeti: <b><span id="sZ">1.00</span>×</b><input id="rZ" type="range" min="0.25" max="3" step="0.05" value="1"></div>
+    <p class="note">Bu ayarlar sadece senin ekranını etkiler ve bu tarayıcıda hatırlanır.</p>
+  </details>
+</aside>
+
+<main id="stage">
+  <canvas id="view"></canvas>
+  <canvas id="fx" aria-hidden="true"></canvas>
+  <div class="ov" id="status">BAKIŞ 000° · ZOOM 1.0× · KULE 400 m</div>
+  <button class="ov" id="toggle">AWOS ▶</button>
+  <div class="ov" id="nav">
+    <span class="deg" id="navDeg">000°</span>
+    <div class="pad">
+      <button class="up" data-k="ArrowUp" aria-label="Yukarı bak">▲</button>
+      <button class="lt" data-k="ArrowLeft" aria-label="Sola dön">◀</button>
+      <div class="mid">360°</div>
+      <button class="rt" data-k="ArrowRight" aria-label="Sağa dön">▶</button>
+      <button class="dn" data-k="ArrowDown" aria-label="Aşağı bak">▼</button>
+    </div>
+  </div>
+  <div class="ov" id="freq"><span id="fstate">AVAILABLE</span><span class="f">TWR 120.6</span></div>
+  <div class="ov" id="comms">
+    <button class="big" id="ptt">PTT<small>SPACE</small></button>
+    <button class="big" id="tel">TELEFON<small>B</small></button>
+  </div>
+  <div class="ov" id="help">← → ↑ ↓ / sürükle: bak · Tab: ön ↔ arka · Tekerlek / + −: yakınlaştır / uzaklaştır · R: başlangıç · Space: PTT · B: telefon</div>
+  <div id="err"></div>
+</main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/*__MODELS__*/
+</script>
+<script>
+/*__WX__*/
+/*__NET__*/
+</script>
+<script>
+const DATA = __DATA__;
+// Tower: Jeppesen 10-9 "Control Tower" between Apron 1/2 and Apron 4 – the building circled in Ömer's photo.
+const TOWER = { x:1310, y:990 };
+const START = { hdg:0, pitch:-14 };          // looking north, as in Ömer's photo
+const NM = 1852;
+
+// ===================== AWOS / ATIS =====================
+// Weather is owned by the pilot/instructor screen and only displayed here.
+const WXL = WXM.create();           // local copy: keeps the arrow moving between updates
+let WXR = null, WXR_t = 0;          // last state received from the pilot screen
+const ENDS = {};   // '03L' -> {qfu, elev_ft}
+DATA.runways.forEach(r=>r.ends.forEach((e,i)=>ENDS[e]={qfu:r.qfu[i], elev_ft:r.elev_ft[i]}));
+const fmt=(v,d)=>v.toFixed(d);
+const pad3=WXM.pad3;
+let lastHistPush=0;
+function remoteCur(c){ WXL.cur=c; WXR_t=Date.now(); WXR=null; const n=Date.now(); if(n-lastHistPush>=1000){ lastHistPush=n; WXL.hist.push([n,c.dir,c.spd]); const cut=n-600000; while(WXL.hist.length&&WXL.hist[0][0]<cut) WXL.hist.shift(); } }
+function wxNow(){ return (WXR && Date.now()-WXR_t<4000) ? WXR : {inp:WXL.inp,cur:WXL.cur,hist:WXL.hist}; }
+function applyRemote(w){ if(!w||!w.inp) return; Object.assign(WXL.inp,w.inp); if(w.cur){ WXR={inp:w.inp,cur:w.cur,hist:w.hist||[]}; WXR_t=Date.now(); }
+  document.getElementById('wxSrc').textContent='Hava durumu pilot (instructor) ekranından geliyor. Sadece pilot değiştirebilir.'; }
+try{ const bc=new BroadcastChannel('twrsim'); bc.onmessage=e=>{ if(e.data&&e.data.t==='state'){ applyRemote(e.data.wx); window.__sb=e.data.sb||[]; window.__traffic=window.__traffic||{}; window.__traffic.local=e.data.traffic||[]; } }; }catch(e){}
+try{ const w=JSON.parse(localStorage.getItem('twrsim.wx')||'null'); if(w&&w.inp) Object.assign(WXL.inp,w.inp); }catch(e){}
+for(let i=0;i<5;i++) WXL.tick(1);
+
+let active=null;
+function headwind(end){ const c=wxNow().cur; return c.spd*Math.cos((c.dir-ENDS[end].qfu)*Math.PI/180); }
+function suggested(){ return headwind('03R')>=0 ? '03' : '21'; }
+function renderAWOS(){
+  const dir=active.slice(0,2), ends=[dir+'L',dir+'R'], w=wxNow();
+  document.getElementById('dials').innerHTML=ends.map(e=>AWOS.card(e,ENDS[e].qfu,ENDS[e].elev_ft,w)).join('');
+  const [ml,mr]=AWOS.met(w,DATA.elev_ft); document.getElementById('met').innerHTML=ml+mr;
+  document.querySelectorAll('#rwys button').forEach(b=>b.classList.toggle('on',b.dataset.r===active));
+  const c=w.cur, hw=headwind(active), xw=Math.abs(c.spd*Math.sin((c.dir-ENDS[active].qfu)*Math.PI/180));
+  document.getElementById('rwyHint').textContent=`Rüzgâra göre öneri: ${suggested()} yönü (karar senin). RWY ${active}: karşı rüzgâr ${fmt(hw,0)} kt, yan rüzgâr ${fmt(xw,0)} kt.`;
+}
+{
+  const box=document.getElementById('rwys');
+  ['03L','03R','21L','21R'].forEach(r=>{ const b=document.createElement('button'); b.textContent=r; b.dataset.r=r; b.onclick=()=>{ active=r; renderAWOS(); }; box.appendChild(b); });
+  active=suggested()+'R'; renderAWOS();
+  const clk=document.getElementById('clock');
+  const tick=()=>{ clk.textContent=AWOS.clock(); if(Date.now()-WXR_t>4000) WXL.tick(1); renderAWOS(); };
+  tick(); setInterval(tick,1000);
+}
+
+// ===================== settings (remembered in this browser) =====================
+const SET={ h:400, turn:1, zoomS:1 };
+try{ Object.assign(SET, JSON.parse(localStorage.getItem('ltac-atc-settings')||'{}')); }catch(e){}
+const saveSet=()=>{ try{ localStorage.setItem('ltac-atc-settings',JSON.stringify(SET)); }catch(e){} };
+const rH=document.getElementById('rH'), rT=document.getElementById('rT'), rZ=document.getElementById('rZ');
+function syncSet(){ rH.value=SET.h; rT.value=SET.turn; rZ.value=SET.zoomS;
+  document.getElementById('sH').textContent=SET.h; document.getElementById('sT').textContent=(+SET.turn).toFixed(2); document.getElementById('sZ').textContent=(+SET.zoomS).toFixed(2); }
+rH.oninput=()=>{ SET.h=+rH.value; syncSet(); saveSet(); };
+rT.oninput=()=>{ SET.turn=+rT.value; syncSet(); saveSet(); };
+rZ.oninput=()=>{ SET.zoomS=+rZ.value; syncSet(); saveSet(); };
+syncSet();
+
+// ===================== comms (visual for now; audio arrives with the shared server) =====================
+const ptt=document.getElementById('ptt'), tel=document.getElementById('tel'), fstate=document.getElementById('fstate');
+function setPTT(on){ if(NET.server) return; ptt.classList.toggle('on',on); fstate.classList.toggle('busy',on); fstate.textContent=on?'BUSY':'AVAILABLE'; }
+ptt.addEventListener('pointerdown',e=>{ e.preventDefault(); setPTT(true); });
+['pointerup','pointerleave','pointercancel'].forEach(ev=>ptt.addEventListener(ev,()=>setPTT(false)));
+tel.addEventListener('click',()=>{ if(!NET.server) tel.classList.toggle('on'); });
+NET.start({role:'atc', ui:{fstate, ptt, tel, who:document.getElementById('whoList'), count:document.getElementById('nWho')},
+  onState:(st,from)=>{ if(st&&st.wx) applyRemote(st.wx); if(st&&st.sb) window.__sb=st.sb; if(st&&st.wxc) remoteCur(st.wxc); window.__traffic=window.__traffic||{}; if(st&&st.traffic){ if(Array.isArray(st.traffic)) window.__traffic[from||'p']=st.traffic; else Object.assign(window.__traffic,st.traffic); } }, toast:m=>{ const h=document.getElementById('help'); h.textContent=m; h.style.color='#ffb4b4'; setTimeout(()=>{ h.style.color=''; },4000); } });
+
+document.getElementById('toggle').onclick=()=>{ const s=document.getElementById('side'); s.classList.toggle('hide');
+  document.getElementById('toggle').textContent=s.classList.contains('hide')?'◀ AWOS':'AWOS ▶'; dispatchEvent(new Event('resize')); };
+
+// ===================== 3D tower view =====================
+(function(){
+if(!window.THREE){ const e=document.getElementById('err'); e.style.display='flex'; e.textContent='3D kütüphanesi yüklenemedi. İnternet bağlantısını kontrol edip sayfayı yenile.'; return; }
+const stage=document.getElementById('stage'), canvas=document.getElementById('view');
+const renderer=new THREE.WebGLRenderer({canvas, antialias:true, logarithmicDepthBuffer:true});
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
+const scene=new THREE.Scene();
+const HAZE=new THREE.Color('#c3ccd3');
+const NIGHT_MATS=[]; let HEMI=null, SUN=null;   // darkened at night
+scene.fog=new THREE.Fog(HAZE, 6000, 2*10*NM);
+const camera=new THREE.PerspectiveCamera(55, 1, 1, 80000);
+camera.rotation.order='YXZ';
+const FOV=55;
+
+// sky dome
+const sky=(()=>{ const g=new THREE.SphereGeometry(70000,32,16);
+  const m=new THREE.ShaderMaterial({ side:THREE.BackSide, depthWrite:false, fog:false,
+    uniforms:{ top:{value:new THREE.Color('#5d86b8')}, hor:{value:HAZE} },
+    vertexShader:'varying vec3 vP; void main(){ vP=normalize(position); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader:'uniform vec3 top; uniform vec3 hor; varying vec3 vP; void main(){ float t=pow(clamp(vP.y,0.0,1.0),0.45); gl_FragColor=vec4(mix(hor,top,t),1.0); }' });
+  const s=new THREE.Mesh(g,m); scene.add(s); return s; })();
+
+// outer ground beyond 10 NM
+{ const g=new THREE.PlaneGeometry(2*22*NM,2*22*NM); g.rotateX(-Math.PI/2);
+  const p=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:'#8c8162'})); p.position.set(TOWER.x,-0.6,-TOWER.y); scene.add(p); NIGHT_MATS.push(p.material); }
+
+function rwyGeom(r){ const a=r.thr[r.ends[0]].xy, b=r.thr[r.ends[1]].xy; const L=Math.hypot(b[0]-a[0],b[1]-a[1]);
+  const u=[(b[0]-a[0])/L,(b[1]-a[1])/L]; return {a,b,L,u,n:[-u[1],u[0]]}; }
+function rect(a,u,n,from,to,half){ return [[a[0]+u[0]*from+n[0]*half,a[1]+u[1]*from+n[1]*half],[a[0]+u[0]*to+n[0]*half,a[1]+u[1]*to+n[1]*half],
+  [a[0]+u[0]*to-n[0]*half,a[1]+u[1]*to-n[1]*half],[a[0]+u[0]*from-n[0]*half,a[1]+u[1]*from-n[1]*half]]; }
+
+// aerodrome surface texture: grass + pavement + runway asphalt (1 m per texel)
+const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
+{
+  const TW=Math.round((X1-X0)/R), TH=Math.round((Y1-Y0)/R);
+  const c=document.createElement('canvas'); c.width=TW; c.height=TH; const g=c.getContext('2d');
+  const P=p=>[(p[0]-X0)/R,(Y1-p[1])/R];
+  const poly=pts=>{ g.beginPath(); pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); g.closePath(); };
+  g.fillStyle='#8f8462'; g.fillRect(0,0,TW,TH);
+  let seed=7; const rnd=()=>{ seed=(seed*16807)%2147483647; return seed/2147483647; };
+  for(let i=0;i<6000;i++){ const x=rnd()*TW, y=rnd()*TH, r=15+rnd()*70; g.fillStyle=`rgba(${rnd()<.5?'90,84,58':'160,150,114'},${0.02+rnd()*0.04})`; g.beginPath(); g.ellipse(x,y,r,r*(0.5+rnd()),rnd()*3,0,7); g.fill(); }
+  g.fillStyle='#a3a29c'; for(const p of DATA.pavement){ poly(p); g.fill(); }
+  g.fillStyle='#8f8462'; for(const p of DATA.holes){ poly(p); g.fill(); }
+  g.strokeStyle='#a3a29c'; g.lineJoin='round';
+  g.lineCap='round'; for(const e of DATA.taxi.edges){ if(e.kind==='runway') continue; g.beginPath(); e.pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); g.lineWidth=(e.kind==='leadin'?16:23)/R; g.stroke(); } g.lineCap='butt';
+  for(const l of (DATA.pave_lines||[])){ g.beginPath(); l.pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); g.lineWidth=l.w/R; g.stroke(); }
+  for(const r of DATA.runways){ const q=rwyGeom(r), hw=r.width/2;
+    g.fillStyle='#45484b'; poly(rect(q.a,q.u,q.n,-r.stopway,0,hw)); g.fill(); poly(rect(q.a,q.u,q.n,q.L,q.L+r.stopway,hw)); g.fill();
+    g.fillStyle='#38393b'; poly(rect(q.a,q.u,q.n,0,q.L,hw)); g.fill(); }
+  const tex=new THREE.CanvasTexture(c); tex.anisotropy=renderer.capabilities.getMaxAnisotropy(); tex.minFilter=THREE.LinearMipmapLinearFilter;
+  const geo=new THREE.PlaneGeometry(X1-X0,Y1-Y0); geo.rotateX(-Math.PI/2);
+  const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex})); m.position.set((X0+X1)/2,0,-(Y0+Y1)/2); scene.add(m); NIGHT_MATS.push(m.material);
+}
+
+// painted markings as geometry (sharp at any distance)
+const buf={ white:[], yellow:[] };
+function quad(col,q,h){ const p=q.map(v=>[v[0],h,-v[1]]); buf[col].push(...p[0],...p[1],...p[2],...p[0],...p[2],...p[3]); }
+function seg(col,p,q,w,h){ const dx=q[0]-p[0], dy=q[1]-p[1], L=Math.hypot(dx,dy)||1, nx=-dy/L*w/2, ny=dx/L*w/2;
+  quad(col,[[p[0]+nx,p[1]+ny],[q[0]+nx,q[1]+ny],[q[0]-nx,q[1]-ny],[p[0]-nx,p[1]-ny]],h); }
+function ribbon(col,pts,w,h){ for(let i=0;i<pts.length-1;i++) seg(col,pts[i],pts[i+1],w,h); }
+function designator(txt,p,u){
+  const c=document.createElement('canvas'); c.width=256; c.height=160; const g=c.getContext('2d');
+  g.fillStyle='#fff'; g.font='bold 150px system-ui,Arial'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(txt,128,84);
+  const t=new THREE.CanvasTexture(c); t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+  const geo=new THREE.PlaneGeometry(28,18); geo.rotateX(-Math.PI/2);
+  const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:t,transparent:true,depthWrite:false}));
+  m.rotation.y=-Math.atan2(u[0],u[1]); m.position.set(p[0],0.14,-p[1]); scene.add(m);
+}
+for(const r of DATA.runways){
+  const g=rwyGeom(r), hw=r.width/2, H=0.12;
+  for(const s of [-1,1]){ const o=s*(hw-1); seg('white',[g.a[0]+g.n[0]*o,g.a[1]+g.n[1]*o],[g.b[0]+g.n[0]*o,g.b[1]+g.n[1]*o],0.9,H); }
+  for(let k=150;k<g.L-150;k+=50) quad('white',rect(g.a,g.u,g.n,k,k+30,0.45),H);
+  for(const end of [0,1]){
+    const a=end?g.b:g.a, u=end?[-g.u[0],-g.u[1]]:g.u, n=end?[-g.n[0],-g.n[1]]:g.n;
+    const stripes=r.width>=60?16:12, sw=1.8, gap=(r.width-6-stripes*sw)/(stripes-1);
+    for(let i=0;i<stripes;i++){ const off=-hw+3+i*(sw+gap)+sw/2; quad('white',rect([a[0]+n[0]*off,a[1]+n[1]*off],u,n,6,36,sw/2),H); }
+    for(const s of [-1,1]) quad('white',rect([a[0]+n[0]*s*hw*0.45,a[1]+n[1]*s*hw*0.45],u,n,400,460,5),H);
+    for(const d of [150,300,600,750,900]) for(const s of [-1,1]) quad('white',rect([a[0]+n[0]*s*hw*0.45,a[1]+n[1]*s*hw*0.45],u,n,d,d+22,1.5),H);
+    designator(r.ends[end],[a[0]+u[0]*60,a[1]+u[1]*60],u);
+  }
+}
+for(const e of DATA.taxi.edges){ if(e.kind==='runway') continue; ribbon('yellow',e.pts,e.kind==='leadin'?0.8:1.0,0.1); }
+function nearestDir(p){ let bd=1e9, dir=[1,0];
+  for(const e of DATA.taxi.edges){ if(e.kind==='runway'||e.kind==='leadin') continue;
+    for(let i=0;i<e.pts.length-1;i++){ const a=e.pts[i], b=e.pts[i+1], vx=b[0]-a[0], vy=b[1]-a[1], L2=vx*vx+vy*vy||1;
+      let t=((p[0]-a[0])*vx+(p[1]-a[1])*vy)/L2; t=Math.max(0,Math.min(1,t)); const d=Math.hypot(p[0]-a[0]-vx*t,p[1]-a[1]-vy*t);
+      if(d<bd){ bd=d; const L=Math.sqrt(L2); dir=[vx/L,vy/L]; } } }
+  return dir; }
+function dashedAcross(c,n,half,w,h){ for(let s=-half; s<half; s+=3.6){ const e=Math.min(half,s+2); seg('yellow',[c[0]+n[0]*s,c[1]+n[1]*s],[c[0]+n[0]*e,c[1]+n[1]*e],w,h); } }
+for(const hp of DATA.holding_points){
+  let d=nearestDir(hp.xy); const n=[-d[1],d[0]];
+  if(hp.type==='runway'){   // pattern A: 2 solid + 2 dashed, dashed side toward the runway
+    const r=DATA.runways.find(x=>x.id===hp.rwy);
+    if(r){ const g=rwyGeom(r), v=[hp.xy[0]-g.a[0],hp.xy[1]-g.a[1]], side=v[0]*g.n[0]+v[1]*g.n[1], toR=[-g.n[0]*Math.sign(side),-g.n[1]*Math.sign(side)];
+      if(d[0]*toR[0]+d[1]*toR[1]<0) d=[-d[0],-d[1]]; }
+    [[-1.35,'s'],[-0.45,'s'],[0.45,'d'],[1.35,'d']].forEach(([o,k])=>{ const c=[hp.xy[0]+d[0]*o,hp.xy[1]+d[1]*o];
+      if(k==='s') seg('yellow',[c[0]-n[0]*11.5,c[1]-n[1]*11.5],[c[0]+n[0]*11.5,c[1]+n[1]*11.5],0.45,0.12); else dashedAcross(c,n,11.5,0.45,0.12); });
+  } else dashedAcross(hp.xy,n,11.5,0.45,0.12);   // intermediate holding position
+}
+for(const [col,hex] of [['white','#f2f2ee'],['yellow','#f1c12b']]){
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(buf[col],3));
+  const mm=new THREE.MeshBasicMaterial({color:hex,side:THREE.DoubleSide}); mm.userData.day=hex; scene.add(new THREE.Mesh(g,mm)); NIGHT_MATS.push(mm);
+}
+
+// ---------- buildings (AIP traced footprints, heights estimated) ----------
+if(DATA.buildings && DATA.buildings.length){
+  HEMI=new THREE.HemisphereLight('#e6eef5','#7a7058',0.75); scene.add(HEMI);
+  const sun=new THREE.DirectionalLight('#ffffff',0.55); sun.position.set(-0.5,1,0.6); scene.add(sun); SUN=sun;
+  const wall=new THREE.MeshLambertMaterial({color:'#c9c4b8'}), roof=new THREE.MeshLambertMaterial({color:'#8d939a'});
+  for(const b of DATA.buildings){
+    const sh=new THREE.Shape(b.pts.map(p=>new THREE.Vector2(p[0],p[1])));
+    const g=new THREE.ExtrudeGeometry(sh,{depth:b.h,bevelEnabled:false});
+    g.rotateX(-Math.PI/2);
+    scene.add(new THREE.Mesh(g,[roof,wall]));
+  }
+}
+
+// ---------- passenger boarding bridges, Apron 4 stands 103–120 (APT-02) ----------
+// Each bridge starts at the terminal facade in front of the stand (fixed link), turns on a rotunda and its
+// telescopic tunnel reaches the aircraft's forward left door only when an aircraft is parked; otherwise it stays
+// retracted beside the rotunda, clear of the stand and the taxilanes.
+const PBBS=[];
+{ const mat=new THREE.MeshLambertMaterial({color:'#c9ced4'}), dark=new THREE.MeshLambertMaterial({color:'#5b636b'}), glass=new THREE.MeshLambertMaterial({color:'#2d3e4f'});
+  const term=DATA.buildings||[];
+  const ray=(o,h)=>{ const dx=Math.sin(h*Math.PI/180), dy=Math.cos(h*Math.PI/180); let best=null;
+    for(const b of term){ const p=b.pts; for(let i=0;i<p.length;i++){ const a=p[i], c=p[(i+1)%p.length], ex=c[0]-a[0], ey=c[1]-a[1], den=dx*ey-dy*ex; if(Math.abs(den)<1e-9) continue;
+      const t=((a[0]-o[0])*ey-(a[1]-o[1])*ex)/den, u=((a[0]-o[0])*dy-(a[1]-o[1])*dx)/den; if(t>20&&t<160&&u>=0&&u<=1&&(best==null||t<best)) best=t; } } return best; };
+  const st=DATA.stands.filter(x=>+x.id>=103&&+x.id<=120);
+  const hits=st.map(x=>ray(x.xy,x.hdg)), known=hits.filter(v=>v!=null&&v<130), avg=known.length?known.reduce((a,b)=>a+b,0)/known.length:100;
+  st.forEach((x,i)=>{ const t=(hits[i]!=null&&hits[i]<130)?hits[i]:avg, h=x.hdg*Math.PI/180, f=[Math.sin(h),Math.cos(h)], l=[-Math.cos(h),Math.sin(h)];   // f toward the terminal, l = aircraft's left
+    const P=(a,b)=>[x.xy[0]+f[0]*a+l[0]*b,x.xy[1]+f[1]*a+l[1]*b], F=P(Math.max(t,22),12), R=P(Math.min(Math.max(t,22)-6,14),12), deck=4.6;   // stand point = nose-wheel stop mark; rotunda just ahead-left of the nose so the bridge meets the forward left door
+    const g=new THREE.Group(); scene.add(g);
+    const link=new THREE.Mesh(new THREE.BoxGeometry(3.2,3,1),mat); g.add(link);
+    { const dx=R[0]-F[0], dy=R[1]-F[1], L=Math.hypot(dx,dy); link.scale.z=L; link.position.set((F[0]+R[0])/2,deck+1.5,-(F[1]+R[1])/2); link.rotation.y=Math.atan2(dx,-dy); }
+    for(const q of [F,[(F[0]+R[0])/2,(F[1]+R[1])/2]]){ const c=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,deck,8),dark); c.position.set(q[0],deck/2,-q[1]); g.add(c); }
+    const rot=new THREE.Mesh(new THREE.CylinderGeometry(2.4,2.4,3.4,16),mat); rot.position.set(R[0],deck+1.6,-R[1]); g.add(rot);
+    const rc=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,deck,8),dark); rc.position.set(R[0],deck/2,-R[1]); g.add(rc);
+    const tun=new THREE.Mesh(new THREE.BoxGeometry(2.9,2.8,1),mat), cab=new THREE.Mesh(new THREE.BoxGeometry(4,3.1,3.2),glass), leg=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,1,8),dark);
+    const wheels=new THREE.Mesh(new THREE.BoxGeometry(3,0.9,1.2),dark); g.add(tun,cab,leg,wheels);
+    const park=P(0,15);   // retracted cab position, ahead of the nose and outside the stand
+    PBBS.push({id:x.id,xy:x.xy,hdg:x.hdg,R,park,deck,cur:{p:park.slice(),h:deck},tun,cab,leg,wheels,f,l}); });
+}
+function pbbFrame(dt){ const k=1-Math.exp(-dt*0.6);
+  for(const B of PBBS){ let goal=B.park, gh=B.deck;
+    objs.forEach(o=>{ if(o.kind!=='ac'||!o.r) return; if(Math.abs(((o.rh-B.hdg)%360+540)%360-180)>10) return; if(o.v&&Math.hypot(o.v[0],o.v[1])>0.3) return;
+      const S=(MODELS.SPEC&&MODELS.SPEC[o.type])||{L:38,R:2,gear:{h:2.6,nose:5}}, h=o.rh*Math.PI/180, no=S.L/2-(S.gear.nose||5);   // stand point = nose-wheel stop mark
+      if(Math.hypot(o.r[0]+Math.sin(h)*no-B.xy[0],o.r[1]+Math.cos(h)*no-B.xy[1])>4) return;
+      const k=o.g.scale.x||1, d=k*(S.L/2-Math.max(2.5,S.L*0.12)), side=k*(S.R||2)+1.9, c=[o.r[0],o.r[1]];   // forward left door of the drawn (scaled) aircraft; cab just off the fuselage
+      goal=[c[0]+B.f[0]*d+B.l[0]*side,c[1]+B.f[1]*d+B.l[1]*side]; gh=Math.max(1.8,k*((S.gear.h||2)+(S.R||2)*0.6)); });
+    const c=B.cur; c.p[0]+=(goal[0]-c.p[0])*k; c.p[1]+=(goal[1]-c.p[1])*k; c.h+=(gh-c.h)*k;
+    const dx=c.p[0]-B.R[0], dy=c.p[1]-B.R[1], L=Math.max(4,Math.hypot(dx,dy)), yaw=Math.atan2(dx,-dy), mid=[(B.R[0]+c.p[0])/2,(B.R[1]+c.p[1])/2], hm=(B.deck+c.h)/2;
+    B.tun.scale.z=L; B.tun.position.set(mid[0],hm+1.5,-mid[1]); B.tun.rotation.set(Math.atan2(B.deck-c.h,L)*-1,yaw,0,'YXZ');
+    B.cab.position.set(c.p[0],c.h+1.5,-c.p[1]); B.cab.rotation.y=yaw;
+    const w=[B.R[0]+dx*0.72,B.R[1]+dy*0.72], wh=B.deck+(c.h-B.deck)*0.72; B.leg.scale.y=wh; B.leg.position.set(w[0],wh/2,-w[1]); B.wheels.position.set(w[0],0.45,-w[1]); B.wheels.rotation.y=yaw; }
+}
+
+// ---------- aerodrome lighting at night (LGT-04) ----------
+// NOTE: light positions follow standard ICAO spacing; LTAC-specific light types (ALS category, PAPI side) to be checked against the AIP.
+const GLOW=(()=>{ const c=document.createElement('canvas'); c.width=c.height=64; const g=c.getContext('2d'), r=g.createRadialGradient(32,32,0,32,32,32);
+  r.addColorStop(0,'rgba(255,255,255,1)'); r.addColorStop(0.22,'rgba(255,255,255,.9)'); r.addColorStop(0.5,'rgba(255,255,255,.25)'); r.addColorStop(1,'rgba(255,255,255,0)'); g.fillStyle=r; g.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); })();
+function ptsLayer(list,size){ const g=new THREE.BufferGeometry(), P=[], C=[], col=new THREE.Color();
+  for(const [x,y,h,c] of list){ P.push(x,h,-y); col.set(c); C.push(col.r,col.g,col.b); }
+  g.setAttribute('position',new THREE.Float32BufferAttribute(P,3)); g.setAttribute('color',new THREE.Float32BufferAttribute(C,3));
+  const p=new THREE.Points(g,new THREE.PointsMaterial({size,sizeAttenuation:false,vertexColors:true,map:GLOW,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending})); p.renderOrder=5; return p; }
+const NIGHT=new THREE.Group(); NIGHT.visible=false; scene.add(NIGHT);
+const DIRL={};   // '03'/'21' -> group of direction-dependent lights
+const PAPI={};   // end -> {pts, layer, base, left}
+const SBAR={};   // runway holding point id -> layer
+const along=(L,step)=>{ const out=[]; for(let s=0;s<=L+0.1;s+=step) out.push(Math.min(s,L)); if(out.at(-1)<L-1) out.push(L); return out; };
+{ const W='#fff4d6', G='#2bff6e', Rd='#ff2a1a', Y='#ffcf3a', B='#3d6bff';
+  const edge=[], twy=[], twe=[];
+  for(const r of DATA.runways){ const q=rwyGeom(r), hw=r.width/2+1.5, P=(s,o)=>[q.a[0]+q.u[0]*s+q.n[0]*o,q.a[1]+q.u[1]*s+q.n[1]*o];
+    for(const s of along(q.L,60)) for(const o of [-hw,hw]) edge.push([...P(s,o),0.4,W]);
+    r.ends.forEach((E,i)=>{ const d=E.slice(0,2), list=DIRL[d]||(DIRL[d]=[]), dir=i?-1:1, s0=i?q.L:0, sEnd=i?0:q.L, uE=[q.u[0]*dir,q.u[1]*dir], nL=[-uE[1],uE[0]];
+      const Q=(s,o)=>[q.a[0]+q.u[0]*s+q.n[0]*o,q.a[1]+q.u[1]*s+q.n[1]*o];
+      for(let o=-hw;o<=hw+0.1;o+=3){ list.push([...Q(s0-dir*1,o),0.35,G]); list.push([...Q(sEnd+dir*1,o),0.35,Rd]); }   // threshold green, runway end red
+      for(const t of along(q.L,30)){ const fromEnd=q.L-t; list.push([...Q(s0+dir*t,0),0.25,fromEnd<300?Rd:fromEnd<900?(Math.round(t/30)%2?Rd:W):W]); }   // centreline
+      for(let t=30;t<=900;t+=30){ const c=Q(s0-dir*t,0); for(const o of [-2,-1,0,1,2]) list.push([c[0]+q.n[0]*o,c[1]+q.n[1]*o,0.8,W]);   // approach lights
+        if(t===300) for(let o=-15;o<=15;o+=1.5) if(Math.abs(o)>2.5) list.push([c[0]+q.n[0]*o,c[1]+q.n[1]*o,0.8,W]); }
+      const pts=[0,1,2,3].map(k=>{ const c=Q(s0+dir*300,0); const off=hw+15+k*9; return [c[0]+nL[0]*off,c[1]+nL[1]*off,0.8]; });
+      const lay=ptsLayer(pts.map(p=>[...p,Rd]),9); NIGHT.add(lay); PAPI[E]={lay,thr:Q(s0,0),u:uE,elev:r.elev_ft[i]}; }); }
+  for(const e of DATA.taxi.edges){ if(e.kind!=='taxiway'&&e.kind!=='taxilane') continue;
+    let acc=0; for(let i=1;i<e.pts.length;i++){ const a=e.pts[i-1], b=e.pts[i], L=Math.hypot(b[0]-a[0],b[1]-a[1]); if(L<0.1) continue; const u=[(b[0]-a[0])/L,(b[1]-a[1])/L];
+      for(let s=(30-acc)%30; s<L; s+=30){ const p=[a[0]+u[0]*s,a[1]+u[1]*s]; twy.push([...p,0.25,G]); if(e.kind==='taxiway'&&Math.round((acc+s)/30)%2===0) for(const o of [-11.5,11.5]) twe.push([p[0]-u[1]*o,p[1]+u[0]*o,0.35,B]); }
+      acc=(acc+L)%30; } }
+  NIGHT.add(ptsLayer(edge,5)); NIGHT.add(ptsLayer(twy,3.5)); NIGHT.add(ptsLayer(twe,3.5));
+  for(const d in DIRL){ const l=ptsLayer(DIRL[d],4.5); l.userData.dir=d; DIRL[d]=l; NIGHT.add(l); }
+  // apron floodlights: one mast per ~150 m cluster of stands + lit ground
+  const cells={}; for(const s of DATA.stands){ const k=Math.round(s.xy[0]/150)+','+Math.round(s.xy[1]/150); (cells[k]=cells[k]||[]).push(s.xy); }
+  const masts=[], disc=new THREE.CircleGeometry(85,32); disc.rotateX(-Math.PI/2);
+  const discM=new THREE.MeshBasicMaterial({map:GLOW,color:'#ffcf8a',transparent:true,opacity:0.32,blending:THREE.AdditiveBlending,depthWrite:false});
+  for(const k in cells){ const c=cells[k], x=c.reduce((t,p)=>t+p[0],0)/c.length, y=c.reduce((t,p)=>t+p[1],0)/c.length; masts.push([x,y,25,'#ffe2b0']);
+    const m=new THREE.Mesh(disc,discM); m.position.set(x,0.25,-y); NIGHT.add(m); }
+  NIGHT.add(ptsLayer(masts,10));
+  // stop bars: red row across the taxiway at every runway holding point
+  for(const hp of DATA.holding_points){ if(hp.type!=='runway') continue; const d=nearestDir(hp.xy), n=[-d[1],d[0]], row=[];
+    for(let o=-10.5;o<=10.5;o+=3) row.push([hp.xy[0]+n[0]*o,hp.xy[1]+n[1]*o,0.35,Rd]); const l=ptsLayer(row,5); SBAR[hp.id]=l; NIGHT.add(l); }
+}
+const PAPI_W=new THREE.Color('#fff4d6'), PAPI_R=new THREE.Color('#ff2a1a');
+function nightFrame(night,active){
+  NIGHT.visible=night; if(!night) return;
+  const d=(active||'03R').slice(0,2); for(const k in DIRL) DIRL[k].visible=k===d;
+  const off=new Set(window.__sb||[]); for(const id in SBAR) SBAR[id].visible=!off.has(id);
+  // PAPI shows the glide path of the nearest aircraft on that final (2 white + 2 red = on slope)
+  for(const E in PAPI){ const P=PAPI[E]; P.lay.visible=E.slice(0,2)===d; if(!P.lay.visible) continue; let ang=3.0, best=1e9;
+    objs.forEach(o=>{ if(!o.r||o.kind!=='ac') return; const v=[o.r[0]-P.thr[0],o.r[1]-P.thr[1]], al=-(v[0]*P.u[0]+v[1]*P.u[1]), xt=Math.abs(v[0]*P.u[1]-v[1]*P.u[0]), h=(o.ra-P.elev)*0.3048;
+      if(al>0&&al<10*1852&&xt<800&&h>2&&al<best){ best=al; ang=Math.atan2(h,al+300)*180/Math.PI; } });
+    const nW=ang>3.5?4:ang>3.2?3:ang>2.8?2:ang>2.5?1:0, c=P.lay.geometry.attributes.color;
+    for(let k=0;k<4;k++){ const col=k<nW?PAPI_W:PAPI_R; c.setXYZ(k,col.r,col.g,col.b); } c.needsUpdate=true; }
+}
+// ---------- aircraft external lights on the 3D models (LGT-03/05) ----------
+const LTC={navL:'#ff2a2a',navR:'#2bff6e',tail:'#ffffff',beaconTop:'#ff3b30',beaconBot:'#ff3b30',strobeL:'#ffffff',strobeR:'#ffffff',landing:'#fff6dc',taxi:'#fff6dc'};
+const POOL=(()=>{ const g=new THREE.CircleGeometry(1,24); g.rotateX(-Math.PI/2); return g; })();
+function acLights(o){ const L=o.g.userData.lights||{}, out={};
+  for(const k in LTC){ if(!L[k]) continue; const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:GLOW,color:LTC[k],transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,sizeAttenuation:false}));
+    sp.position.set(L[k][0],L[k][1],L[k][2]); sp.renderOrder=6; o.g.add(sp); out[k]=sp; }
+  const sp=o.g.userData.spec||{}, pool=new THREE.Mesh(POOL,new THREE.MeshBasicMaterial({map:GLOW,color:'#fff1d0',transparent:true,opacity:0.45,blending:THREE.AdditiveBlending,depthWrite:false}));
+  const len=sp.L||30; pool.scale.setScalar(Math.max(8,len*0.45)); pool.position.set(0,0.3,(L.landing?L.landing[2]:-len/2)-Math.max(12,len*0.7)); o.g.add(pool); out.pool=pool; return out; }
+function setAcLights(o,m,t,night,air){ const X=o.lt; if(!X) return; const sz=(night?0.6:0.35)/Math.max(1,o.g.scale.x);
+  // where the tower sees the aircraft from (local frame: nose is -z): lights only show in their real beam sectors
+  const lp=o.g.worldToLocal(camera.position.clone()), hl=Math.hypot(lp.x,lp.z)||1, fw=-lp.z/hl;   // fw 1 = seen from the front, -1 = from behind
+  const side=k=>X[k]&&Math.sign(lp.x)===Math.sign(X[k].position.x)&&fw>-0.34;   // nav lights: own side, 0..110° from the nose
+  const on=(k,v,s)=>{ if(!X[k]) return; X[k].visible=!!v&&s>0; X[k].scale.setScalar(Math.max(0,s)*sz); };
+  const bc=t%1.1, sb=t%1.2, beam=Math.max(0,fw-0.2)/0.8;   // landing/taxi lights point forward: nothing from the side or behind
+  on('navL',(m&4)&&side('navL'),0.008); on('navR',(m&4)&&side('navR'),0.008); on('tail',(m&4)&&fw<-0.34,0.007);
+  on('beaconTop',(m&8)&&bc<0.16,0.01); on('beaconBot',(m&8)&&bc>0.55&&bc<0.71,0.01);
+  const strobe=(m&16)&&(sb<0.05||(sb>0.14&&sb<0.19)); on('strobeL',strobe,0.013); on('strobeR',strobe,0.013);
+  on('landing',m&2,(air?0.016:0.012)*beam*beam); on('taxi',(m&1)&&!(m&2),0.009*beam*beam);
+  X.pool.visible=night&&!air&&!!(m&3); }
+
+const st={ hdg:START.hdg, pitch:START.pitch, zoom:1 };
+const keys=new Set();
+const statusEl=document.getElementById('status'), navDeg=document.getElementById('navDeg');
+function zoomBy(f){ st.zoom=Math.max(0.5,Math.min(8,st.zoom*f)); }
+addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT') return;   // sliders keep their own arrow keys
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){ keys.add(e.key); e.preventDefault(); }
+  else if(e.key==='Tab'){ e.preventDefault(); st.hdg+=180; }
+  else if(e.key==='+'||e.key==='='){ zoomBy(Math.pow(1.25,SET.zoomS)); }
+  else if(e.key==='-'||e.key==='_'){ zoomBy(1/Math.pow(1.25,SET.zoomS)); }
+  else if(e.key==='1'){ lookAtEnds(['03L','03R']); }
+  else if(e.key==='9'){ lookAtEnds(['21L','21R']); }
+  else if(e.key==='r'||e.key==='R'){ st.hdg=START.hdg; st.pitch=START.pitch; st.zoom=1; }
+  else if(e.key===' '){ e.preventDefault(); if(!e.repeat) setPTT(true); }
+  else if(e.key==='b'||e.key==='B'){ if(!NET.server) tel.classList.toggle('on'); }
+});
+addEventListener('keyup',e=>{ keys.delete(e.key); if(e.key===' ') setPTT(false); });
+addEventListener('blur',()=>{ keys.clear(); setPTT(false); });
+document.querySelectorAll('.pad button').forEach(b=>{ const k=b.dataset.k;
+  const on=e=>{ e.preventDefault(); keys.add(k); b.classList.add('on'); }, off=()=>{ keys.delete(k); b.classList.remove('on'); };
+  b.addEventListener('pointerdown',on); ['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,off)); });
+
+// drag to look, wheel / pinch to zoom
+let drag=null, pinch=null; const ptrs=new Map();
+canvas.addEventListener('pointerdown',e=>{ canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,[e.clientX,e.clientY]);
+  if(ptrs.size===1){ drag={x:e.clientX,y:e.clientY,h:st.hdg,p:st.pitch}; canvas.classList.add('drag'); }
+  else if(ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a[0]-b[0],a[1]-b[1]),z:st.zoom}; drag=null; } });
+canvas.addEventListener('pointermove',e=>{ if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,[e.clientX,e.clientY]);
+  if(pinch&&ptrs.size===2){ const [a,b]=[...ptrs.values()]; st.zoom=Math.max(0.5,Math.min(8,pinch.z*Math.pow(Math.hypot(a[0]-b[0],a[1]-b[1])/pinch.d,SET.zoomS))); return; }
+  if(drag){ const k=camera.fov/canvas.clientHeight*SET.turn; st.hdg=drag.h-(e.clientX-drag.x)*k; st.pitch=drag.p+(e.clientY-drag.y)*k; } });
+const endPtr=e=>{ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null; if(ptrs.size===0){ drag=null; canvas.classList.remove('drag'); } };
+canvas.addEventListener('pointerup',endPtr); canvas.addEventListener('pointercancel',endPtr);
+canvas.addEventListener('wheel',e=>{ e.preventDefault(); zoomBy(Math.exp(-e.deltaY*0.0015*SET.zoomS)); },{passive:false});
+
+function resize(){ const w=stage.clientWidth, h=stage.clientHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+addEventListener('resize',resize); new ResizeObserver(resize).observe(stage); resize();
+
+let last=performance.now();
+// smooth camera turn toward a pair of runway thresholds, from the tower position
+let camGoal=null;
+function lookAtEnds(list){ let x=0,y=0,n=0; for(const r of DATA.runways) list.forEach(E=>{ if(r.thr[E]){ x+=r.thr[E].xy[0]; y+=r.thr[E].xy[1]; n++; } });
+  if(!n) return; x/=n; y/=n; const d=Math.hypot(x-TOWER.x,y-TOWER.y), h=(Math.atan2(x-TOWER.x,y-TOWER.y)*180/Math.PI+360)%360;
+  camGoal={hdg:h,pitch:-Math.atan2(SET.h,d)*180/Math.PI}; }
+function frame(t){ const dt=Math.min(0.1,(t-last)/1000); last=t;
+  if(camGoal){ if(keys.size){ camGoal=null; } else { const k=1-Math.exp(-dt*3.2), dh=((camGoal.hdg-st.hdg)%360+540)%360-180, dp=camGoal.pitch-st.pitch;
+    st.hdg+=dh*k; st.pitch+=dp*k; if(Math.abs(dh)<0.05&&Math.abs(dp)<0.05){ st.hdg=camGoal.hdg; st.pitch=camGoal.pitch; camGoal=null; } } }
+  const turn=60*SET.turn*dt/Math.sqrt(st.zoom), tilt=30*SET.turn*dt/Math.sqrt(st.zoom);
+  if(keys.has('ArrowLeft')) st.hdg-=turn; if(keys.has('ArrowRight')) st.hdg+=turn;
+  if(keys.has('ArrowUp')) st.pitch+=tilt; if(keys.has('ArrowDown')) st.pitch-=tilt;
+  st.hdg=((st.hdg%360)+360)%360; st.pitch=Math.max(-89,Math.min(25,st.pitch));
+  camera.fov=FOV/st.zoom; camera.updateProjectionMatrix();
+  camera.position.set(TOWER.x, SET.h, -TOWER.y);
+  camera.rotation.set(st.pitch*Math.PI/180, -st.hdg*Math.PI/180, 0);
+  sky.position.copy(camera.position);
+  const hd=pad3(st.hdg);
+  statusEl.textContent=`BAKIŞ ${hd}° · ZOOM ${st.zoom.toFixed(1)}× · KULE ${SET.h} m`; navDeg.textContent=hd+'°';
+  trafficFrame(t); pbbFrame(dt); weatherFrame(dt,t); renderer.render(scene,camera); requestAnimationFrame(frame); }
+window.__tower={st,SET,lookAtEnds,PBB:()=>PBBS,camera,get objs(){ return objs; }};
+
+// ---------- traffic from the pilot screens ----------
+const acMat=new THREE.MeshLambertMaterial({color:'#f4f5f7'}), acDark=new THREE.MeshLambertMaterial({color:'#2b3846'}), vehMat=new THREE.MeshLambertMaterial({color:'#f2c230'});
+function makeAircraft(small){
+  const g=new THREE.Group(), k=small?0.3:1;
+  const fus=new THREE.Mesh(new THREE.CylinderGeometry(2*k,2*k,36*k,10),acMat); fus.rotation.x=Math.PI/2; g.add(fus);
+  const nose=new THREE.Mesh(new THREE.SphereGeometry(2*k,10,8),acMat); nose.position.z=-18*k; g.add(nose);
+  const wing=new THREE.Mesh(new THREE.BoxGeometry(34*k,0.6*k,6*k),acMat); wing.position.set(0,-0.8*k,-1*k); g.add(wing);
+  const stab=new THREE.Mesh(new THREE.BoxGeometry(12*k,0.4*k,3*k),acMat); stab.position.set(0,0.5*k,16*k); g.add(stab);
+  const fin=new THREE.Mesh(new THREE.BoxGeometry(0.5*k,7*k,4*k),acDark); fin.position.set(0,4*k,16*k); g.add(fin);
+  if(!small){ for(const x of [-7,7]){ const e=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,4,8),acDark); e.rotation.x=Math.PI/2; e.position.set(x,-2.2,-3); g.add(e); } }
+  return g; }
+function makeVehicle(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.4,2.4,6),vehMat); m.position.y=1.2; const g=new THREE.Group(); g.add(m); return g; }
+const objs=new Map(); window.__objs=objs;
+const TRAFFIC_SCALE=1.2, VEH_SCALE=2.2, BUS_SCALE=2.6, VEHLEN={'Fire truck':12,'Police':4.6,'Ambulance':6.5,'Follow-me':5.2,'Passenger bus':13.8,'Catering truck':9};
+let lastTF=0;
+function trafficFrame(now){
+  const T=window.__traffic||{}, seen=new Set(), dt=Math.min(0.2,lastTF?(now-lastTF)/1000:0.016); lastTF=now;
+  const k=1-Math.exp(-dt*9), kh=1-Math.exp(-dt*7);
+  for(const list of Object.values(T)) for(const a of (list||[])){
+    seen.add(a.id); let o=objs.get(a.id);
+    if(!o||o.type!==a.type){ if(o) scene.remove(o.g); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),key:null,type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
+    const key=a.pos[0]+','+a.pos[1]+','+a.hdg+','+a.alt;
+    if(o.key!==key){ // a new sample arrived
+      if(!a.v&&o.p){ const d=(now-o.t)/1000; if(d>0.05) o.v=[(a.pos[0]-o.p[0])/d,(a.pos[1]-o.p[1])/d]; }
+      else o.v=a.v||[0,0];
+      o.vz=a.vz||0; o.p=a.pos.slice(); o.alt=a.alt; o.t=now; o.key=key; }
+    const ex=Math.min(0.6,(now-o.t)/1000), tx=o.p[0]+(o.v?o.v[0]:0)*ex, ty=o.p[1]+(o.v?o.v[1]:0)*ex, ta=o.alt+(o.vz||0)*ex;
+    if(!o.r||o.rep!==(a.rep||0)||Math.hypot(tx-o.r[0],ty-o.r[1])>300){ o.rep=a.rep||0; o.r=[tx,ty]; o.ra=ta; o.rh=a.hdg; }
+    else { o.r[0]+=(tx-o.r[0])*k; o.r[1]+=(ty-o.r[1])*k; o.ra+=(ta-o.ra)*k; o.rh+=(((a.hdg-o.rh)%360+540)%360-180)*kh; }
+    const h=a.kind==='veh'?0:Math.max(0,(o.ra-DATA.elev_ft)*0.3048);
+    MODELS.animate(o.g,now/1000,{eng:a.kind==='ac'&&a.eng!==false,ias:a.ias});
+    { const ud=o.g.userData; if(ud&&ud.gear&&!ud.gearFixed){ const k=typeof a.gear==='number'?a.gear:(a.gear===false?0:1), H=(ud.spec.gear.h||1)+(ud.spec.gear.wr||0.3)*2; ud.gear.visible=k>0.03; ud.gear.scale.y=Math.max(0.03,k); ud.gear.position.y=(1-k)*H; } }  // gear extends/retracts in step with the pilot screen
+    if(a.crash&&!o.fire){ o.fire=MODELS.fire(a.kind==='veh'?0.5:Math.max(0.6,Math.min(2.2,((MODELS.SPEC[a.type]||{}).L||30)/30))); scene.add(o.fire); }
+    if(o.fire){ if(!a.crash){ scene.remove(o.fire); o.fire=null; } else { o.fire.position.set(o.r[0],h,-o.r[1]); MODELS.animateFire(o.fire,now/1000); } }
+    o.kind=a.kind; if(o.lt) setAcLights(o,a.lt||0,now/1000,NIGHT_ON,!!a.air);
+    // pitch: nose up about the main gear on the ground (rotation / flare), about the centre in the air
+    o.rp=(o.rp||0)+(((a.pt||0)-(o.rp||0)))*k; const pr=o.rp*Math.PI/180, SP=o.g.userData.spec, zm=SP&&SP.gear?SP.gear.main-SP.L/2:0;
+    o.g.rotation.order='YXZ'; o.g.position.set(o.r[0],h+(h<3&&a.kind==='ac'?Math.max(0,zm*Math.sin(pr))*TRAFFIC_SCALE:0),-o.r[1]); o.g.rotation.y=-o.rh*Math.PI/180; o.g.rotation.x=a.kind==='ac'?pr:0;
+    // traffic is drawn a fixed 20% larger; zooming in or out does not change its size
+    const gs=a.kind==='veh'?(a.type==='Passenger bus'?BUS_SCALE:VEH_SCALE):TRAFFIC_SCALE; o.g.scale.setScalar(gs);
+    if(a.kind==='veh') for(const f of (o.g.userData.flashers||[])) if(f.sp){ const k=0.04/gs/Math.sqrt(st.zoom); f.sp.scale.set(k,k,1); }
+  }
+  objs.forEach((o,id)=>{ if(!seen.has(id)){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); objs.delete(id); } });
+}
+
+// ---------- weather effects seen from the tower (rain, snow, storm, visibility) ----------
+const fx=document.getElementById('fx'), fc=fx.getContext('2d');
+const skyU=sky.material.uniforms, SKY0=new THREE.Color('#5d86b8'), HAZE0=HAZE.clone();
+const SKY_RAIN=new THREE.Color('#79838c'), SKY_TS=new THREE.Color('#3b4249'), HAZE_RAIN=new THREE.Color('#9aa3aa'), HAZE_TS=new THREE.Color('#6d757c');
+let NIGHT_ON=false, lastNight=false;
+let drops=[], flash=0, nextFlash=performance.now()+8000, bolt=null;
+function fxSize(){ fx.width=stage.clientWidth; fx.height=stage.clientHeight; }
+new ResizeObserver(fxSize).observe(stage); fxSize();
+function weatherFrame(dt,now){
+  const w=wxNow(), I=w.inp, c=w.cur, W=fx.width, H=fx.height;
+  const precip=I.precip||'none', storm=!!I.storm, k={light:0.45,mod:1,heavy:1.9}[I.intensity]||1;
+  // sky, haze and fog distance follow the visibility and the weather
+  const wet=(precip!=='none'||storm)?1:0, dark=storm?1:0;
+  const sk=SKY0.clone().lerp(SKY_RAIN,wet*0.8).lerp(SKY_TS,dark*0.8), hz=HAZE0.clone().lerp(HAZE_RAIN,wet).lerp(HAZE_TS,dark*0.8);
+  NIGHT_ON=!!I.night; if(NIGHT_ON){ sk.set('#070d18').lerp(SKY_TS,dark*0.2); hz.set('#121a26'); }
+  skyU.top.value.copy(sk); HAZE.copy(hz); scene.fog.color.copy(hz);
+  if(NIGHT_ON!==lastNight){ lastNight=NIGHT_ON; for(const m of NIGHT_MATS){ if(!m.userData.day) m.userData.day='#'+m.color.getHexString(); m.color.set(m.userData.day); if(NIGHT_ON) m.color.multiplyScalar(0.18); }
+    if(HEMI) HEMI.intensity=NIGHT_ON?0.12:0.75; if(SUN) SUN.intensity=NIGHT_ON?0.04:0.55; }
+  nightFrame(NIGHT_ON,active||'03R');
+  const vis=Math.max(200,+I.vis||9999), far=vis>=9999?2*10*NM:Math.max(400,vis*1.6);
+  scene.fog.far=far; scene.fog.near=Math.min(6000,far*0.25);
+  fc.clearRect(0,0,W,H);
+  if(wet){ fc.fillStyle=`rgba(25,30,36,${0.10*k+dark*0.18})`; fc.fillRect(0,0,W,H); }
+  // particles
+  const want=precip==='RA'||precip==='DZ'?Math.round((precip==='DZ'?350:700)*k*(W*H/1.2e6)):precip==='SN'?Math.round(650*k*(W*H/1.2e6)):(storm?Math.round(500*(W*H/1.2e6)):0);
+  const snow=precip==='SN';
+  while(drops.length<want) drops.push({x:Math.random()*W,y:Math.random()*H,z:0.4+Math.random()*0.6,s:Math.random()*6.28});
+  if(drops.length>want) drops.length=want;
+  // wind across the view: relative to where the controller is looking
+  const rel=Math.sin(((c.dir+180)-st.hdg)*Math.PI/180)*c.spd;
+  if(snow){ fc.fillStyle='rgba(255,255,255,.9)';
+    for(const d of drops){ d.y+=(28+40*d.z)*dt; d.s+=dt*1.5; d.x+=(rel*3*d.z+Math.sin(d.s)*12)*dt;
+      if(d.y>H){d.y=-4;d.x=Math.random()*W;} if(d.x>W)d.x-=W; if(d.x<0)d.x+=W;
+      fc.beginPath(); fc.arc(d.x,d.y,1+1.8*d.z,0,6.3); fc.fill(); } }
+  else if(drops.length){ fc.strokeStyle='rgba(205,215,225,.55)'; fc.lineWidth=1; fc.beginPath();
+    const vy=900, vx=rel*14;
+    for(const d of drops){ d.y+=vy*d.z*dt; d.x+=vx*d.z*dt; if(d.y>H){d.y=-20;d.x=Math.random()*W;} if(d.x>W)d.x-=W; if(d.x<0)d.x+=W;
+      const L=18*d.z; fc.moveTo(d.x,d.y); fc.lineTo(d.x-vx/vy*L,d.y-L); }
+    fc.stroke(); }
+  // lightning
+  if(storm&&now>nextFlash){ flash=1; nextFlash=now+5000+Math.random()*12000;
+    let x=W*(0.15+Math.random()*0.7), y=0; bolt=[[x,y]]; const hz=H*(0.35+Math.random()*0.15); while(y<hz){ y+=10+Math.random()*25; x+=(Math.random()-0.5)*40; bolt.push([x,y]); } }
+  if(flash>0){ fc.fillStyle=`rgba(235,240,255,${0.55*flash})`; fc.fillRect(0,0,W,H);
+    if(bolt&&flash>0.4){ fc.strokeStyle='rgba(255,255,255,.95)'; fc.lineWidth=2.5; fc.beginPath(); bolt.forEach((p,i)=>i?fc.lineTo(p[0],p[1]):fc.moveTo(p[0],p[1])); fc.stroke(); }
+    flash=Math.max(0,flash-dt*2.2); }
+}
+requestAnimationFrame(frame);
+})();
+</script>
+<script>
+// ===================== TWR SİM layout override (editor) =====================
+// The line editor saves the layout here; every screen applies it before the airport is built.
+(function(){ try{ const s=localStorage.getItem('twrsim.layout'); if(!s) return; const L=JSON.parse(s);
+  if(L&&L.taxi&&L.taxi.nodes&&L.taxi.edges){ DATA.taxi=L.taxi; if(L.stands) DATA.stands=L.stands; if(L.holding_points) DATA.holding_points=L.holding_points; window.__layoutVer=L.v||0; } }catch(e){} })();
+// shared copy (db): when someone saves a newer layout, take it and reload once
+(async function(){ try{ if(!window.claude||!claude.use) return; const db=await claude.use('db'); if(!db) return; window.__layoutDb=db;
+  db.doc('layout/current').onSnapshot(s=>{ if(!s.exists){ return; } const d=s.data(); if(!d) return;
+    if(d.reset){ try{ if(localStorage.getItem('twrsim.layout')){ localStorage.removeItem('twrsim.layout'); if(sessionStorage.getItem('twrsim.layoutReload')!==String(d.v)){ sessionStorage.setItem('twrsim.layoutReload',String(d.v)); location.reload(); } } }catch(e){} return; }
+    if(!d.json) return;
+    let cur=0; try{ cur=(JSON.parse(localStorage.getItem('twrsim.layout')||'null')||{}).v||0; }catch(e){}
+    if(d.v&&d.v!==cur){ try{ localStorage.setItem('twrsim.layout',d.json); if(sessionStorage.getItem('twrsim.layoutReload')!==String(d.v)){ sessionStorage.setItem('twrsim.layoutReload',String(d.v)); location.reload(); } }catch(e){} } },()=>{}); }catch(e){} })();
+</script>
+
+</body>
+</html>
