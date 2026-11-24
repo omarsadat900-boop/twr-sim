@@ -220,7 +220,7 @@ document.getElementById('toggle').onclick=()=>{ const s=document.getElementById(
 if(!window.THREE){ const e=document.getElementById('err'); e.style.display='flex'; e.textContent='3D kütüphanesi yüklenemedi. İnternet bağlantısını kontrol edip sayfayı yenile.'; return; }
 const stage=document.getElementById('stage'), canvas=document.getElementById('view');
 const renderer=new THREE.WebGLRenderer({canvas, antialias:true, logarithmicDepthBuffer:true});
-renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
+renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio||1));
 const scene=new THREE.Scene();
 const HAZE=new THREE.Color('#c3ccd3');
 const NIGHT_MATS=[]; let HEMI=null, SUN=null;   // darkened at night
@@ -517,7 +517,7 @@ function makeAircraft(small){
   return g; }
 function makeVehicle(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.4,2.4,6),vehMat); m.position.y=1.2; const g=new THREE.Group(); g.add(m); return g; }
 const objs=new Map(); window.__objs=objs;
-const TRAFFIC_SCALE=1.2, VEH_SCALE=2.2, BUS_SCALE=2.6, VEHLEN={'Fire truck':12,'Police':4.6,'Ambulance':6.5,'Follow-me':5.2,'Passenger bus':13.8,'Catering truck':9};
+const TRAFFIC_SCALE=2.0, VEH_SCALE=3.5, BUS_SCALE=3.0, VEHLEN={'Fire truck':12,'Police':4.6,'Ambulance':6.5,'Follow-me':5.2,'Passenger bus':13.8,'Catering truck':9};
 let lastTF=0;
 function trafficFrame(now){
   const T=window.__traffic||{}, seen=new Set(), dt=Math.min(0.2,lastTF?(now-lastTF)/1000:0.016); lastTF=now;

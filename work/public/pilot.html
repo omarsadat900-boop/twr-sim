@@ -1192,9 +1192,9 @@ function simStep(dt){
   for(const a of TR) if(a.kind==='ac'){ if(!a.perf.gear) a.gearDown=true; const t=a.gearDown?1:0; a.gearK=a.gearK==null?t:a.gearK+clamp(t-a.gearK,-dt/6,dt/6); }
   checkCollisions();
 }
-let SIMX=1;   // scenario speed ×1..×4 (traffic only; the clock and weather stay real time)
+let SIMX=1, lastIcon=0;   // scenario speed ×1..×4 (traffic only; the clock and weather stay real time)
 function setSimX(x){ SIMX=x; document.querySelectorAll('#mX [data-x]').forEach(b=>b.classList.toggle('on',+b.dataset.x===x)); }
-setInterval(()=>{ const now=performance.now(); let dt=(now-simLast)/1000; simLast=now; dt=Math.min(dt,1); for(let i=0;i<SIMX;i++) simStep(dt); broadcast(); iconState(); },100);
+setInterval(()=>{ const now=performance.now(); let dt=(now-simLast)/1000; simLast=now; dt=Math.min(dt,1); for(let i=0;i<SIMX;i++) simStep(dt); broadcast(); if(now-lastIcon>=100){ lastIcon=now; iconState(); } },33);
 // ---------- aircraft external lights (LGT-01..03): one source for pilot + tower ----------
 const LT={TX:1,LD:2,NAV:4,BCN:8,STB:16};
 function lightsOf(a){ if(a.kind!=='ac'||!a.eng||a.mode==='crash') return 0;
@@ -1683,14 +1683,16 @@ setInterval(()=>{ WX.tick(1);
 // ======================================================================
 let bc=null; try{ bc=new BroadcastChannel('twrsim'); }catch(e){}
 let lastB=0;
+let lastWxB=0;
 function broadcast(force){ const now=Date.now(); if(!force&&now-lastB<90) return; lastB=now;
   const msg={t:'state',wx:{inp:WX.inp,cur:WX.cur,hist:WX.hist.slice(-600),active:activeRwy},
     sb:Object.keys(SBOFF), traffic:TR.map(a=>{ let v=[0,0],vz=0; if(a._bp){ const dt=(now-a._bt)/1000; if(dt>0.02){ v=[(a.pos[0]-a._bp[0])/dt,(a.pos[1]-a._bp[1])/dt]; vz=(a.alt-a._ba)/dt; } }
       a._bp=a.pos.slice(); a._ba=a.alt; a._bt=now;
       return {id:a.id,kind:a.kind,cs:a.cs,type:a.type,airline:a.airline,rep:a.rep||0,eng:!!a.eng,lt:lightsOf(a),gear:a.kind==='ac'?+(a.gearK??1).toFixed(2):1,crash:a.mode==='crash',pos:a.pos,hdg:a.hdg,pt:+(a.pitch||0).toFixed(1),alt:a.alt,air:!!a.air,ias:a.ias,v:[+v[0].toFixed(2),+v[1].toFixed(2)],vz:+vz.toFixed(2)}; })};
+  const wxDue=force||now-lastWxB>=1000; if(wxDue) lastWxB=now; else delete msg.wx;   // the full weather block (600-sample history) only once a second
   try{ bc&&bc.postMessage(msg); }catch(e){}
   if(NET.on) NET.sendState(force?{wx:{inp:WX.inp},wxc:WX.cur,traffic:msg.traffic,sb:msg.sb}:{wxc:WX.cur,traffic:msg.traffic,sb:msg.sb});
-  try{ localStorage.setItem('twrsim.wx',JSON.stringify(msg.wx)); }catch(e){} }
+  if(wxDue) try{ localStorage.setItem('twrsim.wx',JSON.stringify(msg.wx)); }catch(e){} }
 
 // ======================================================================
 //  comms (visual; audio arrives with the server step)
