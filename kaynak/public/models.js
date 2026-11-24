@@ -208,3 +208,13 @@ const MODELS = (()=>{
   }
   return { aircraft, vehicle, animate, SPEC:S, VTYPE };
 })();
+// ---------- fire effect for a crash (GND-05) ----------
+MODELS.fire=function(size){ const g=new THREE.Group(), k=size||1, parts=[];
+  const fm=[new THREE.MeshBasicMaterial({color:'#ff7a00',transparent:true,opacity:0.85,depthWrite:false}),new THREE.MeshBasicMaterial({color:'#ffd23a',transparent:true,opacity:0.8,depthWrite:false}),new THREE.MeshBasicMaterial({color:'#ff3b00',transparent:true,opacity:0.75,depthWrite:false})];
+  const sm=new THREE.MeshLambertMaterial({color:'#2d2d2d',transparent:true,opacity:0.55,depthWrite:false});
+  for(let i=0;i<14;i++){ const c=new THREE.Mesh(new THREE.ConeGeometry(2.2*k,7*k,7),fm[i%3]); c.position.set((Math.random()-0.5)*14*k,3.5*k,(Math.random()-0.5)*14*k); c.userData={ph:Math.random()*6,s:0.7+Math.random()*0.8}; g.add(c); parts.push(c); }
+  const smoke=[]; for(let i=0;i<10;i++){ const m=new THREE.Mesh(new THREE.SphereGeometry(4*k,8,6),sm); m.userData={ph:Math.random(),x:(Math.random()-0.5)*8*k,z:(Math.random()-0.5)*8*k}; g.add(m); smoke.push(m); }
+  g.userData={flashers:[],fire:{parts,smoke,k}}; return g; };
+MODELS.animateFire=function(g,t){ const F=g.userData.fire; if(!F) return;
+  F.parts.forEach(c=>{ const u=c.userData, f=0.75+0.35*Math.sin(t*9+u.ph)+0.15*Math.sin(t*23+u.ph*2); c.scale.set(u.s*f,u.s*(0.8+0.5*f),u.s*f); c.position.y=3.5*F.k*u.s*(0.8+0.5*f); });
+  F.smoke.forEach(m=>{ const u=m.userData, ph=((t*0.12+u.ph)%1); m.position.set(u.x+ph*12*F.k,10*F.k+ph*60*F.k,u.z); m.scale.setScalar(0.6+ph*2.2); }); };
