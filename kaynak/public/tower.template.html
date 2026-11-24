@@ -407,7 +407,7 @@ function trafficFrame(now){
       else o.v=a.v||[0,0];
       o.vz=a.vz||0; o.p=a.pos.slice(); o.alt=a.alt; o.t=now; o.key=key; }
     const ex=Math.min(0.6,(now-o.t)/1000), tx=o.p[0]+(o.v?o.v[0]:0)*ex, ty=o.p[1]+(o.v?o.v[1]:0)*ex, ta=o.alt+(o.vz||0)*ex;
-    if(!o.r||Math.hypot(tx-o.r[0],ty-o.r[1])>300){ o.r=[tx,ty]; o.ra=ta; o.rh=a.hdg; }
+    if(!o.r||o.rep!==(a.rep||0)||Math.hypot(tx-o.r[0],ty-o.r[1])>300){ o.rep=a.rep||0; o.r=[tx,ty]; o.ra=ta; o.rh=a.hdg; }
     else { o.r[0]+=(tx-o.r[0])*k; o.r[1]+=(ty-o.r[1])*k; o.ra+=(ta-o.ra)*k; o.rh+=(((a.hdg-o.rh)%360+540)%360-180)*kh; }
     const h=a.kind==='veh'?0:Math.max(0,(o.ra-DATA.elev_ft)*0.3048);
     MODELS.animate(o.g,now/1000,{eng:a.kind==='ac',ias:a.ias});
