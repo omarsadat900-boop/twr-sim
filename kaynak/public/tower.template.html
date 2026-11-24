@@ -167,7 +167,7 @@ function remoteCur(c){ WXL.cur=c; WXR_t=Date.now(); WXR=null; const n=Date.now()
 function wxNow(){ return (WXR && Date.now()-WXR_t<4000) ? WXR : {inp:WXL.inp,cur:WXL.cur,hist:WXL.hist}; }
 function applyRemote(w){ if(!w||!w.inp) return; Object.assign(WXL.inp,w.inp); if(w.cur){ WXR={inp:w.inp,cur:w.cur,hist:w.hist||[]}; WXR_t=Date.now(); }
   document.getElementById('wxSrc').textContent='Hava durumu pilot (instructor) ekranından geliyor. Sadece pilot değiştirebilir.'; }
-try{ const bc=new BroadcastChannel('twrsim'); bc.onmessage=e=>{ if(e.data&&e.data.t==='state'){ applyRemote(e.data.wx); window.__traffic=window.__traffic||{}; window.__traffic.local=e.data.traffic||[]; } }; }catch(e){}
+try{ const bc=new BroadcastChannel('twrsim'); bc.onmessage=e=>{ if(e.data&&e.data.t==='state'){ applyRemote(e.data.wx); window.__sb=e.data.sb||[]; window.__traffic=window.__traffic||{}; window.__traffic.local=e.data.traffic||[]; } }; }catch(e){}
 try{ const w=JSON.parse(localStorage.getItem('twrsim.wx')||'null'); if(w&&w.inp) Object.assign(WXL.inp,w.inp); }catch(e){}
 for(let i=0;i<5;i++) WXL.tick(1);
 
@@ -210,7 +210,7 @@ ptt.addEventListener('pointerdown',e=>{ e.preventDefault(); setPTT(true); });
 ['pointerup','pointerleave','pointercancel'].forEach(ev=>ptt.addEventListener(ev,()=>setPTT(false)));
 tel.addEventListener('click',()=>{ if(!NET.server) tel.classList.toggle('on'); });
 NET.start({role:'atc', ui:{fstate, ptt, tel, who:document.getElementById('whoList'), count:document.getElementById('nWho')},
-  onState:(st,from)=>{ if(st&&st.wx) applyRemote(st.wx); if(st&&st.wxc) remoteCur(st.wxc); window.__traffic=window.__traffic||{}; if(st&&st.traffic){ if(Array.isArray(st.traffic)) window.__traffic[from||'p']=st.traffic; else Object.assign(window.__traffic,st.traffic); } }, toast:m=>{ const h=document.getElementById('help'); h.textContent=m; h.style.color='#ffb4b4'; setTimeout(()=>{ h.style.color=''; },4000); } });
+  onState:(st,from)=>{ if(st&&st.wx) applyRemote(st.wx); if(st&&st.sb) window.__sb=st.sb; if(st&&st.wxc) remoteCur(st.wxc); window.__traffic=window.__traffic||{}; if(st&&st.traffic){ if(Array.isArray(st.traffic)) window.__traffic[from||'p']=st.traffic; else Object.assign(window.__traffic,st.traffic); } }, toast:m=>{ const h=document.getElementById('help'); h.textContent=m; h.style.color='#ffb4b4'; setTimeout(()=>{ h.style.color=''; },4000); } });
 
 document.getElementById('toggle').onclick=()=>{ const s=document.getElementById('side'); s.classList.toggle('hide');
   document.getElementById('toggle').textContent=s.classList.contains('hide')?'◀ AWOS':'AWOS ▶'; dispatchEvent(new Event('resize')); };
@@ -223,6 +223,7 @@ const renderer=new THREE.WebGLRenderer({canvas, antialias:true, logarithmicDepth
 renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
 const scene=new THREE.Scene();
 const HAZE=new THREE.Color('#c3ccd3');
+const NIGHT_MATS=[]; let HEMI=null, SUN=null;   // darkened at night
 scene.fog=new THREE.Fog(HAZE, 6000, 2*10*NM);
 const camera=new THREE.PerspectiveCamera(55, 1, 1, 80000);
 camera.rotation.order='YXZ';
@@ -238,7 +239,7 @@ const sky=(()=>{ const g=new THREE.SphereGeometry(70000,32,16);
 
 // outer ground beyond 10 NM
 { const g=new THREE.PlaneGeometry(2*22*NM,2*22*NM); g.rotateX(-Math.PI/2);
-  const p=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:'#8c8162'})); p.position.set(TOWER.x,-0.6,-TOWER.y); scene.add(p); }
+  const p=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:'#8c8162'})); p.position.set(TOWER.x,-0.6,-TOWER.y); scene.add(p); NIGHT_MATS.push(p.material); }
 
 function rwyGeom(r){ const a=r.thr[r.ends[0]].xy, b=r.thr[r.ends[1]].xy; const L=Math.hypot(b[0]-a[0],b[1]-a[1]);
   const u=[(b[0]-a[0])/L,(b[1]-a[1])/L]; return {a,b,L,u,n:[-u[1],u[0]]}; }
@@ -264,7 +265,7 @@ const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
     g.fillStyle='#38393b'; poly(rect(q.a,q.u,q.n,0,q.L,hw)); g.fill(); }
   const tex=new THREE.CanvasTexture(c); tex.anisotropy=renderer.capabilities.getMaxAnisotropy(); tex.minFilter=THREE.LinearMipmapLinearFilter;
   const geo=new THREE.PlaneGeometry(X1-X0,Y1-Y0); geo.rotateX(-Math.PI/2);
-  const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex})); m.position.set((X0+X1)/2,0,-(Y0+Y1)/2); scene.add(m);
+  const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex})); m.position.set((X0+X1)/2,0,-(Y0+Y1)/2); scene.add(m); NIGHT_MATS.push(m.material);
 }
 
 // painted markings as geometry (sharp at any distance)
@@ -314,13 +315,13 @@ for(const hp of DATA.holding_points){
 }
 for(const [col,hex] of [['white','#f2f2ee'],['yellow','#f1c12b']]){
   const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(buf[col],3));
-  scene.add(new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:hex,side:THREE.DoubleSide})));
+  const mm=new THREE.MeshBasicMaterial({color:hex,side:THREE.DoubleSide}); mm.userData.day=hex; scene.add(new THREE.Mesh(g,mm)); NIGHT_MATS.push(mm);
 }
 
 // ---------- buildings (AIP traced footprints, heights estimated) ----------
 if(DATA.buildings && DATA.buildings.length){
-  scene.add(new THREE.HemisphereLight('#e6eef5','#7a7058',0.75));
-  const sun=new THREE.DirectionalLight('#ffffff',0.55); sun.position.set(-0.5,1,0.6); scene.add(sun);
+  HEMI=new THREE.HemisphereLight('#e6eef5','#7a7058',0.75); scene.add(HEMI);
+  const sun=new THREE.DirectionalLight('#ffffff',0.55); sun.position.set(-0.5,1,0.6); scene.add(sun); SUN=sun;
   const wall=new THREE.MeshLambertMaterial({color:'#c9c4b8'}), roof=new THREE.MeshLambertMaterial({color:'#8d939a'});
   for(const b of DATA.buildings){
     const sh=new THREE.Shape(b.pts.map(p=>new THREE.Vector2(p[0],p[1])));
@@ -330,7 +331,77 @@ if(DATA.buildings && DATA.buildings.length){
   }
 }
 
-// ---------- view state & controls ----------
+// ---------- aerodrome lighting at night (LGT-04) ----------
+// NOTE: light positions follow standard ICAO spacing; LTAC-specific light types (ALS category, PAPI side) to be checked against the AIP.
+const GLOW=(()=>{ const c=document.createElement('canvas'); c.width=c.height=64; const g=c.getContext('2d'), r=g.createRadialGradient(32,32,0,32,32,32);
+  r.addColorStop(0,'rgba(255,255,255,1)'); r.addColorStop(0.22,'rgba(255,255,255,.9)'); r.addColorStop(0.5,'rgba(255,255,255,.25)'); r.addColorStop(1,'rgba(255,255,255,0)'); g.fillStyle=r; g.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); })();
+function ptsLayer(list,size){ const g=new THREE.BufferGeometry(), P=[], C=[], col=new THREE.Color();
+  for(const [x,y,h,c] of list){ P.push(x,h,-y); col.set(c); C.push(col.r,col.g,col.b); }
+  g.setAttribute('position',new THREE.Float32BufferAttribute(P,3)); g.setAttribute('color',new THREE.Float32BufferAttribute(C,3));
+  const p=new THREE.Points(g,new THREE.PointsMaterial({size,sizeAttenuation:false,vertexColors:true,map:GLOW,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending})); p.renderOrder=5; return p; }
+const NIGHT=new THREE.Group(); NIGHT.visible=false; scene.add(NIGHT);
+const DIRL={};   // '03'/'21' -> group of direction-dependent lights
+const PAPI={};   // end -> {pts, layer, base, left}
+const SBAR={};   // runway holding point id -> layer
+const along=(L,step)=>{ const out=[]; for(let s=0;s<=L+0.1;s+=step) out.push(Math.min(s,L)); if(out.at(-1)<L-1) out.push(L); return out; };
+{ const W='#fff4d6', G='#2bff6e', Rd='#ff2a1a', Y='#ffcf3a', B='#3d6bff';
+  const edge=[], twy=[], twe=[];
+  for(const r of DATA.runways){ const q=rwyGeom(r), hw=r.width/2+1.5, P=(s,o)=>[q.a[0]+q.u[0]*s+q.n[0]*o,q.a[1]+q.u[1]*s+q.n[1]*o];
+    for(const s of along(q.L,60)) for(const o of [-hw,hw]) edge.push([...P(s,o),0.4,W]);
+    r.ends.forEach((E,i)=>{ const d=E.slice(0,2), list=DIRL[d]||(DIRL[d]=[]), dir=i?-1:1, s0=i?q.L:0, sEnd=i?0:q.L, uE=[q.u[0]*dir,q.u[1]*dir], nL=[-uE[1],uE[0]];
+      const Q=(s,o)=>[q.a[0]+q.u[0]*s+q.n[0]*o,q.a[1]+q.u[1]*s+q.n[1]*o];
+      for(let o=-hw;o<=hw+0.1;o+=3){ list.push([...Q(s0-dir*1,o),0.35,G]); list.push([...Q(sEnd+dir*1,o),0.35,Rd]); }   // threshold green, runway end red
+      for(const t of along(q.L,30)){ const fromEnd=q.L-t; list.push([...Q(s0+dir*t,0),0.25,fromEnd<300?Rd:fromEnd<900?(Math.round(t/30)%2?Rd:W):W]); }   // centreline
+      for(let t=30;t<=900;t+=30){ const c=Q(s0-dir*t,0); for(const o of [-2,-1,0,1,2]) list.push([c[0]+q.n[0]*o,c[1]+q.n[1]*o,0.8,W]);   // approach lights
+        if(t===300) for(let o=-15;o<=15;o+=1.5) if(Math.abs(o)>2.5) list.push([c[0]+q.n[0]*o,c[1]+q.n[1]*o,0.8,W]); }
+      const pts=[0,1,2,3].map(k=>{ const c=Q(s0+dir*300,0); const off=hw+15+k*9; return [c[0]+nL[0]*off,c[1]+nL[1]*off,0.8]; });
+      const lay=ptsLayer(pts.map(p=>[...p,Rd]),9); NIGHT.add(lay); PAPI[E]={lay,thr:Q(s0,0),u:uE,elev:r.elev_ft[i]}; }); }
+  for(const e of DATA.taxi.edges){ if(e.kind!=='taxiway'&&e.kind!=='taxilane') continue;
+    let acc=0; for(let i=1;i<e.pts.length;i++){ const a=e.pts[i-1], b=e.pts[i], L=Math.hypot(b[0]-a[0],b[1]-a[1]); if(L<0.1) continue; const u=[(b[0]-a[0])/L,(b[1]-a[1])/L];
+      for(let s=(30-acc)%30; s<L; s+=30){ const p=[a[0]+u[0]*s,a[1]+u[1]*s]; twy.push([...p,0.25,G]); if(e.kind==='taxiway'&&Math.round((acc+s)/30)%2===0) for(const o of [-11.5,11.5]) twe.push([p[0]-u[1]*o,p[1]+u[0]*o,0.35,B]); }
+      acc=(acc+L)%30; } }
+  NIGHT.add(ptsLayer(edge,5)); NIGHT.add(ptsLayer(twy,3.5)); NIGHT.add(ptsLayer(twe,3.5));
+  for(const d in DIRL){ const l=ptsLayer(DIRL[d],4.5); l.userData.dir=d; DIRL[d]=l; NIGHT.add(l); }
+  // apron floodlights: one mast per ~150 m cluster of stands + lit ground
+  const cells={}; for(const s of DATA.stands){ const k=Math.round(s.xy[0]/150)+','+Math.round(s.xy[1]/150); (cells[k]=cells[k]||[]).push(s.xy); }
+  const masts=[], disc=new THREE.CircleGeometry(85,32); disc.rotateX(-Math.PI/2);
+  const discM=new THREE.MeshBasicMaterial({map:GLOW,color:'#ffcf8a',transparent:true,opacity:0.32,blending:THREE.AdditiveBlending,depthWrite:false});
+  for(const k in cells){ const c=cells[k], x=c.reduce((t,p)=>t+p[0],0)/c.length, y=c.reduce((t,p)=>t+p[1],0)/c.length; masts.push([x,y,25,'#ffe2b0']);
+    const m=new THREE.Mesh(disc,discM); m.position.set(x,0.25,-y); NIGHT.add(m); }
+  NIGHT.add(ptsLayer(masts,10));
+  // stop bars: red row across the taxiway at every runway holding point
+  for(const hp of DATA.holding_points){ if(hp.type!=='runway') continue; const d=nearestDir(hp.xy), n=[-d[1],d[0]], row=[];
+    for(let o=-10.5;o<=10.5;o+=3) row.push([hp.xy[0]+n[0]*o,hp.xy[1]+n[1]*o,0.35,Rd]); const l=ptsLayer(row,5); SBAR[hp.id]=l; NIGHT.add(l); }
+}
+const PAPI_W=new THREE.Color('#fff4d6'), PAPI_R=new THREE.Color('#ff2a1a');
+function nightFrame(night,active){
+  NIGHT.visible=night; if(!night) return;
+  const d=(active||'03R').slice(0,2); for(const k in DIRL) DIRL[k].visible=k===d;
+  const off=new Set(window.__sb||[]); for(const id in SBAR) SBAR[id].visible=!off.has(id);
+  // PAPI shows the glide path of the nearest aircraft on that final (2 white + 2 red = on slope)
+  for(const E in PAPI){ const P=PAPI[E]; P.lay.visible=E.slice(0,2)===d; if(!P.lay.visible) continue; let ang=3.0, best=1e9;
+    objs.forEach(o=>{ if(!o.r||o.kind!=='ac') return; const v=[o.r[0]-P.thr[0],o.r[1]-P.thr[1]], al=-(v[0]*P.u[0]+v[1]*P.u[1]), xt=Math.abs(v[0]*P.u[1]-v[1]*P.u[0]), h=(o.ra-P.elev)*0.3048;
+      if(al>0&&al<10*1852&&xt<800&&h>2&&al<best){ best=al; ang=Math.atan2(h,al+300)*180/Math.PI; } });
+    const nW=ang>3.5?4:ang>3.2?3:ang>2.8?2:ang>2.5?1:0, c=P.lay.geometry.attributes.color;
+    for(let k=0;k<4;k++){ const col=k<nW?PAPI_W:PAPI_R; c.setXYZ(k,col.r,col.g,col.b); } c.needsUpdate=true; }
+}
+// ---------- aircraft external lights on the 3D models (LGT-03/05) ----------
+const LTC={navL:'#ff2a2a',navR:'#2bff6e',tail:'#ffffff',beaconTop:'#ff3b30',beaconBot:'#ff3b30',strobeL:'#ffffff',strobeR:'#ffffff',landing:'#fff6dc',taxi:'#fff6dc'};
+const POOL=(()=>{ const g=new THREE.CircleGeometry(1,24); g.rotateX(-Math.PI/2); return g; })();
+function acLights(o){ const L=o.g.userData.lights||{}, out={};
+  for(const k in LTC){ if(!L[k]) continue; const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:GLOW,color:LTC[k],transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,sizeAttenuation:false}));
+    sp.position.set(L[k][0],L[k][1],L[k][2]); sp.renderOrder=6; o.g.add(sp); out[k]=sp; }
+  const sp=o.g.userData.spec||{}, pool=new THREE.Mesh(POOL,new THREE.MeshBasicMaterial({map:GLOW,color:'#fff1d0',transparent:true,opacity:0.45,blending:THREE.AdditiveBlending,depthWrite:false}));
+  const len=sp.L||30; pool.scale.setScalar(Math.max(8,len*0.45)); pool.position.set(0,0.3,(L.landing?L.landing[2]:-len/2)-Math.max(12,len*0.7)); o.g.add(pool); out.pool=pool; return out; }
+function setAcLights(o,m,t,night,air){ const X=o.lt; if(!X) return; const sz=night?1:0.6;
+  const on=(k,v,s)=>{ if(!X[k]) return; X[k].visible=!!v; X[k].scale.setScalar(s*sz); };
+  const bc=t%1.1, sb=t%1.2;
+  on('navL',m&4,0.008); on('navR',m&4,0.008); on('tail',m&4,0.007);
+  on('beaconTop',(m&8)&&bc<0.16,0.011); on('beaconBot',(m&8)&&bc>0.55&&bc<0.71,0.011);
+  const strobe=(m&16)&&(sb<0.05||(sb>0.14&&sb<0.19)); on('strobeL',strobe,0.016); on('strobeR',strobe,0.016);
+  on('landing',m&2,air?0.02:0.014); on('taxi',(m&1)&&!(m&2),0.011);
+  X.pool.visible=night&&!air&&!!(m&3); }
+
 const st={ hdg:START.hdg, pitch:START.pitch, zoom:1 };
 const keys=new Set();
 const statusEl=document.getElementById('status'), navDeg=document.getElementById('navDeg');
@@ -400,7 +471,7 @@ function trafficFrame(now){
   const k=1-Math.exp(-dt*9), kh=1-Math.exp(-dt*7);
   for(const list of Object.values(T)) for(const a of (list||[])){
     seen.add(a.id); let o=objs.get(a.id);
-    if(!o||o.type!==a.type){ if(o) scene.remove(o.g); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),key:null,type:a.type}; scene.add(o.g); objs.set(a.id,o); }
+    if(!o||o.type!==a.type){ if(o) scene.remove(o.g); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),key:null,type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
     const key=a.pos[0]+','+a.pos[1]+','+a.hdg+','+a.alt;
     if(o.key!==key){ // a new sample arrived
       if(!a.v&&o.p){ const d=(now-o.t)/1000; if(d>0.05) o.v=[(a.pos[0]-o.p[0])/d,(a.pos[1]-o.p[1])/d]; }
@@ -414,6 +485,7 @@ function trafficFrame(now){
     { const ud=o.g.userData; if(ud&&ud.gear&&!ud.gearFixed){ const k=typeof a.gear==='number'?a.gear:(a.gear===false?0:1), H=(ud.spec.gear.h||1)+(ud.spec.gear.wr||0.3)*2; ud.gear.visible=k>0.03; ud.gear.scale.y=Math.max(0.03,k); ud.gear.position.y=(1-k)*H; } }  // gear extends/retracts in step with the pilot screen
     if(a.crash&&!o.fire){ o.fire=MODELS.fire(a.kind==='veh'?0.5:Math.max(0.6,Math.min(2.2,((MODELS.SPEC[a.type]||{}).L||30)/30))); scene.add(o.fire); }
     if(o.fire){ if(!a.crash){ scene.remove(o.fire); o.fire=null; } else { o.fire.position.set(o.r[0],h,-o.r[1]); MODELS.animateFire(o.fire,now/1000); } }
+    o.kind=a.kind; if(o.lt) setAcLights(o,a.lt||0,now/1000,NIGHT_ON,!!a.air);
     o.g.position.set(o.r[0],h,-o.r[1]); o.g.rotation.y=-o.rh*Math.PI/180;
   }
   objs.forEach((o,id)=>{ if(!seen.has(id)){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); objs.delete(id); } });
@@ -423,6 +495,7 @@ function trafficFrame(now){
 const fx=document.getElementById('fx'), fc=fx.getContext('2d');
 const skyU=sky.material.uniforms, SKY0=new THREE.Color('#5d86b8'), HAZE0=HAZE.clone();
 const SKY_RAIN=new THREE.Color('#79838c'), SKY_TS=new THREE.Color('#3b4249'), HAZE_RAIN=new THREE.Color('#9aa3aa'), HAZE_TS=new THREE.Color('#6d757c');
+let NIGHT_ON=false, lastNight=false;
 let drops=[], flash=0, nextFlash=performance.now()+8000, bolt=null;
 function fxSize(){ fx.width=stage.clientWidth; fx.height=stage.clientHeight; }
 new ResizeObserver(fxSize).observe(stage); fxSize();
@@ -432,7 +505,11 @@ function weatherFrame(dt,now){
   // sky, haze and fog distance follow the visibility and the weather
   const wet=(precip!=='none'||storm)?1:0, dark=storm?1:0;
   const sk=SKY0.clone().lerp(SKY_RAIN,wet*0.8).lerp(SKY_TS,dark*0.8), hz=HAZE0.clone().lerp(HAZE_RAIN,wet).lerp(HAZE_TS,dark*0.8);
+  NIGHT_ON=!!I.night; if(NIGHT_ON){ sk.set('#070d18').lerp(SKY_TS,dark*0.2); hz.set('#121a26'); }
   skyU.top.value.copy(sk); HAZE.copy(hz); scene.fog.color.copy(hz);
+  if(NIGHT_ON!==lastNight){ lastNight=NIGHT_ON; for(const m of NIGHT_MATS){ if(!m.userData.day) m.userData.day='#'+m.color.getHexString(); m.color.set(m.userData.day); if(NIGHT_ON) m.color.multiplyScalar(0.18); }
+    if(HEMI) HEMI.intensity=NIGHT_ON?0.12:0.75; if(SUN) SUN.intensity=NIGHT_ON?0.04:0.55; }
+  nightFrame(NIGHT_ON,active||'03R');
   const vis=Math.max(200,+I.vis||9999), far=vis>=9999?2*10*NM:Math.max(400,vis*1.6);
   scene.fog.far=far; scene.fog.near=Math.min(6000,far*0.25);
   fc.clearRect(0,0,W,H);
