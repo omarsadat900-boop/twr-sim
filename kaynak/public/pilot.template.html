@@ -344,6 +344,12 @@ DATA.holding_points.forEach(hp=>{
   EDGES.push({a:id,b:e.b,name:e.name,kind:e.kind,pts:p2,len:plen(p2)});
   e.b=id; e.pts=p1; e.len=plen(p1);
 });
+for(const h of DATA.holding_points){ let bd=1e9, dir=[1,0];
+  for(const e of DATA.taxi.edges){ if(e.kind==='runway'||e.kind==='leadin') continue; for(let i=0;i<e.pts.length-1;i++){ const a=e.pts[i], b=e.pts[i+1], [q]=projSeg(h.xy,a,b), d=dist(q,h.xy); if(d<bd){ bd=d; const L=dist(a,b)||1; dir=[(b[0]-a[0])/L,(b[1]-a[1])/L]; } } }
+  h._n=[-dir[1],dir[0]]; }
+const APRONS=[]; { const acc={}; for(const st of DATA.stands){ (acc[st.apron]=acc[st.apron]||[]).push(st.xy); }
+  const off={'APRON 1':[0,-45],'APRON 2':[-55,0],'APRON 3':[45,-30],'APRON 4':[40,-80],'APRON 5':[-90,40],'APRON 6':[-70,40],'APRON 7':[-60,40],'APRON YKK':[-50,-40]};
+  for(const k in acc){ const a=acc[k]; APRONS.push([k,[a.reduce((s,p)=>s+p[0],0)/a.length+(off[k]||[0,0])[0], a.reduce((s,p)=>s+p[1],0)/a.length+(off[k]||[0,0])[1]]]); } }
 const ADJ=NODES.map(()=>[]);
 EDGES.forEach((e,i)=>{ ADJ[e.a].push({e:i,o:e.b}); ADJ[e.b].push({e:i,o:e.a}); });
 const onRunway=n=>ADJ[n].some(x=>EDGES[x.e].kind==='runway');
@@ -1028,9 +1034,10 @@ function draw(){
   ctx.setLineDash([]);
   // aerodrome
   if(s>0.004){
-    ctx.fillStyle='#5d6266'; DATA.pavement.forEach(p=>{poly(p);ctx.fill();});
+    ctx.fillStyle='#8f9499'; DATA.pavement.forEach(p=>{poly(p);ctx.fill();});
     ctx.fillStyle='#1e2a23'; DATA.holes.forEach(p=>{poly(p);ctx.fill();});
-    if(DATA.buildings&&s>0.05){ ctx.fillStyle='#5f7d9a'; DATA.buildings.forEach(b=>{poly(b.pts);ctx.fill();}); }
+    ctx.strokeStyle='#8f9499'; ctx.lineCap='butt'; for(const l of (DATA.pave_lines||[])){ line(l.pts); ctx.lineWidth=l.w*s; ctx.stroke(); } ctx.lineCap='round';
+    if(DATA.buildings&&s>0.05){ ctx.lineWidth=1; DATA.buildings.forEach(b=>{poly(b.pts);ctx.fillStyle='#4f7fb3';ctx.fill();ctx.strokeStyle='#22405f';ctx.stroke();}); }
     for(const r of DATA.runways){ const a=r.thr[r.ends[0]].xy,b=r.thr[r.ends[1]].xy,L=dist(a,b),n=[-(b[1]-a[1])/L*r.width/2,(b[0]-a[0])/L*r.width/2];
       poly([[a[0]+n[0],a[1]+n[1]],[b[0]+n[0],b[1]+n[1]],[b[0]-n[0],b[1]-n[1]],[a[0]-n[0],a[1]-n[1]]]); ctx.fillStyle='#232627'; ctx.fill();
       if(s>0.05){ ctx.strokeStyle='#e8e8e2'; ctx.setLineDash([30*s,20*s]); ctx.lineWidth=Math.max(1,0.9*s); line([a,b]); ctx.stroke(); ctx.setLineDash([]); } }
@@ -1043,18 +1050,37 @@ function draw(){
         for(const k in L){ if(!PATV.legs[k]) continue; ctx.strokeStyle=col[k]; ctx.lineWidth=2; ctx.setLineDash(k==='up'?[6,6]:[]); line(L[k]); ctx.stroke(); ctx.setLineDash([]);
           const m=S([(L[k][0][0]+L[k][1][0])/2,(L[k][0][1]+L[k][1][1])/2]); ctx.font='11px system-ui'; ctx.fillStyle=col[k]; ctx.fillText(nm[k],m[0]+4,m[1]-4); } } }
     // taxi centrelines
-    if(s>0.08){ ctx.strokeStyle='rgba(241,193,43,.75)'; ctx.lineWidth=1; EDGES.forEach(e=>{ if(e.kind==='runway') return; line(e.pts); ctx.stroke(); }); }
+    if(s>0.08){ EDGES.forEach(e=>{ if(e.kind==='runway') return; line(e.pts);
+        ctx.strokeStyle=e.kind==='taxilane'?'#4cc3ff':e.kind==='leadin'?'#ff6fb5':'#ffd23f';
+        ctx.lineWidth=e.kind==='leadin'?Math.max(0.8,Math.min(1.6,1.6*s)):Math.max(1,Math.min(2.2,2.4*s)); ctx.stroke(); }); }
     // runway labels
     if(s>0.03){ ctx.font='bold 12px ui-monospace,Menlo,monospace'; ctx.fillStyle='#fff'; for(const E of ENDS){ const R=RW[E], q=S([R.thr[0]-R.u[0]*90,R.thr[1]-R.u[1]*90]); ctx.fillText(E,q[0]-11,q[1]+4); } }
     // touchdown zones (orange), route points (pink), holding points (green), stands
-    if(s>0.12){
+    // holding points: bars across the taxiway (red = runway HP, orange = intermediate)
+    if(s>0.08){ for(const h of DATA.holding_points){ const hw=h.type==='runway'?14:11, n=h._n||[1,0], a1=S([h.xy[0]+n[0]*hw,h.xy[1]+n[1]*hw]), a2=S([h.xy[0]-n[0]*hw,h.xy[1]-n[1]*hw]);
+        ctx.strokeStyle=h.type==='runway'?'#ff3b3b':'#ffa424'; ctx.lineWidth=Math.max(2.5,6*s); ctx.beginPath(); ctx.moveTo(a1[0],a1[1]); ctx.lineTo(a2[0],a2[1]); ctx.stroke();
+        if(s>0.45){ const q=S(h.xy); ctx.font='11px system-ui'; ctx.fillStyle=h.type==='runway'?'#ffc2c2':'#ffd9a3'; ctx.fillText(h.id,q[0]+9,q[1]-7); } } }
+    // stands: pink arrows pointing along the parked heading
+    if(s>0.08){ const r=Math.max(3,Math.min(9,6*s));
+      for(const st of DATA.stands){ const q=S(st.xy); ctx.save(); ctx.translate(q[0],q[1]); ctx.rotate(st.hdg*D2R);
+        ctx.beginPath(); ctx.moveTo(0,-r*1.5); ctx.lineTo(r,r); ctx.lineTo(0,r*0.4); ctx.lineTo(-r,r); ctx.closePath(); ctx.fillStyle='#ff6fb5'; ctx.fill(); ctx.lineWidth=1; ctx.strokeStyle='#2a0b1a'; ctx.stroke(); ctx.restore();
+        if(s>0.55){ ctx.font='bold 11px system-ui'; ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(0,0,0,.75)'; ctx.lineWidth=3; ctx.strokeText(st.id,q[0]+r+2,q[1]+4); ctx.fillText(st.id,q[0]+r+2,q[1]+4); } }
+      if(s>0.12){ ctx.font='bold 13px system-ui'; ctx.textAlign='center'; for(const [ap,c] of APRONS){ const q=S(c); ctx.fillStyle='rgba(255,255,255,.85)'; ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.lineWidth=3; ctx.strokeText(ap,q[0],q[1]); ctx.fillText(ap,q[0],q[1]); } ctx.textAlign='left'; } }
+    // taxiway names in boxes
+    if(s>0.12){ const done={}; ctx.font='bold 12px system-ui';
+      for(const e of EDGES){ if(e.kind!=='taxiway'||!e.name) continue; let len=0; for(let i=0;i<e.pts.length-1;i++) len+=dist(e.pts[i],e.pts[i+1]);
+        let t=len/2,i=0; for(;i<e.pts.length-1;i++){ const d=dist(e.pts[i],e.pts[i+1]); if(t<=d) break; t-=d; }
+        const a=e.pts[i], b=e.pts[Math.min(i+1,e.pts.length-1)], L=dist(a,b)||1, q=S([a[0]+(b[0]-a[0])*t/L,a[1]+(b[1]-a[1])*t/L]);
+        if(done[e.name]&&done[e.name].some(z=>Math.hypot(z[0]-q[0],z[1]-q[1])<120)) continue; (done[e.name]=done[e.name]||[]).push(q);
+        const tw=ctx.measureText(e.name).width+8; ctx.fillStyle='#111'; ctx.fillRect(q[0]-tw/2,q[1]-9,tw,18); ctx.strokeStyle='#ffd23f'; ctx.lineWidth=1; ctx.strokeRect(q[0]-tw/2,q[1]-9,tw,18);
+        ctx.fillStyle='#ffd23f'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(e.name,q[0],q[1]); ctx.textAlign='left'; ctx.textBaseline='alphabetic'; } }
+    // route points: only while picking a taxi route
+    if(s>0.12&&MODE&&MODE.k==='route'){
       NODES.forEach(n=>{ if(ADJ[n.id].length&&ADJ[n.id].every(x=>EDGES[x.e].kind==='runway')) return; const q=S([n.x,n.y]);
         if(n.hp){ ctx.fillStyle='#ff9a1f'; ctx.beginPath(); ctx.arc(q[0],q[1],4.5,0,7); ctx.fill(); }
         else if(n.rp==='blue'){ ctx.fillStyle='#2f8cff'; ctx.beginPath(); ctx.arc(q[0],q[1],4.2,0,7); ctx.fill(); }
         else if(n.stand){ ctx.fillStyle='#ff4fa3'; ctx.beginPath(); ctx.arc(q[0],q[1],3.2,0,7); ctx.fill(); }
         else { ctx.fillStyle='#57e04a'; ctx.beginPath(); ctx.arc(q[0],q[1],3.8,0,7); ctx.fill(); } });
-      if(s>0.3){ ctx.font='10px ui-monospace,Menlo,monospace'; ctx.fillStyle='#ffd0e6'; NODES.forEach(n=>{ if(!n.stand) return; const q=S([n.x,n.y]); ctx.fillText(n.stand,q[0]+5,q[1]-3); });
-        ctx.fillStyle='#ffd3a1'; NODES.forEach(n=>{ if(!n.hp) return; const q=S([n.x,n.y]); ctx.fillText(n.hp,q[0]+6,q[1]+10); }); }
     }
   }
   // route preview
