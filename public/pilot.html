@@ -68,6 +68,7 @@
   .patG{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px}
   .patR{display:flex;gap:4px;margin-bottom:6px} .patR button{flex:1}
   .pat button{background:#1e4f8f;border:1px solid #4b6a8f;border-radius:6px;color:#fff;padding:5px 4px;font-size:11px;cursor:pointer;white-space:nowrap}
+  .gaIn{width:62px;font:12px system-ui;background:var(--bg);color:#fff;border:1px solid var(--line2);border-radius:6px;padding:4px}
   .pat button:hover{border-color:#fff} .pat button.on{background:var(--ok)}
   #dPat{padding:8px;min-width:220px;font-size:12px} #dPat label{display:flex;align-items:center;gap:6px;padding:2px 0} #dPat select{font:12px system-ui;background:var(--bg);color:#fff;border:1px solid var(--line2);border-radius:6px;padding:3px}
   .vfr{margin-top:8px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:8px;font-size:12px;display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center}
@@ -187,6 +188,12 @@
           <div class="patT">Trafik paterni (Downwind Join)</div>
           <div class="patG" id="patJoin"></div>
           <div class="patR"><button data-pc="base">Turn Base</button><button data-pc="final">Turn Final</button><button data-pc="cbase">Cancel Base Leg</button></div>
+          <div id="gaMenu" hidden>
+            <div class="patT" style="color:#ffb547">After Go-Around</div>
+            <div class="patR"><input id="gaHdg" type="number" min="1" max="360" placeholder="HDG" class="gaIn"><button data-ga="L">Turn Left</button><button data-ga="R">Turn Right</button><button data-ga="H">Heading</button></div>
+            <div class="patR"><input id="gaSpd" type="number" placeholder="IAS kt" class="gaIn"><button data-ga="S">Hız</button><input id="gaAlt" type="number" step="100" placeholder="ALT ft" class="gaIn"><button data-ga="A">İrtifa</button></div>
+            <div class="patR"><select id="gaRwy" class="gaIn"></select><button data-ga="DL">Left Downwind</button><button data-ga="DR">Right Downwind</button></div>
+          </div>
           <div class="patT">Straight-In Approach</div>
           <div class="patR" id="patSI"></div>
         </div>
@@ -596,7 +603,7 @@ function addAircraft(o){
     alt:Math.max(ELEV,o.alt||ELEV), ias:o.spd||0, vs:0, turn:0, perf:t,
     air:(o.alt||ELEV)>ELEV+50 && (o.spd||0)>40, mode:'parked', nav:'hdg', tgt:{hdg:norm360(o.hdg||0),alt:Math.max(ELEV,o.alt||ELEV),spd:o.spd||0},
     ldg:false, path:null, stand:o.stand||null, status:'' };
-  a.eng=a.air||!a.stand; a.gearDown=!a.air; a.clr={cross:[]};
+  a.eng=a.air||!a.stand; a.gearDown=!a.air||!a.perf.gear; a.gearK=a.gearDown?1:0; a.clr={cross:[]};
   if(a.air){ a.mode='air'; a.status='Uçuşta'; } else if(a.stand){ a.mode='parked'; a.status='Park'; a.ias=0; } else { a.mode='stopped'; a.ias=0; a.status='Yerde'; }
   TR.push(a); select(a); renderStrips(); return a;
 }
@@ -723,6 +730,7 @@ function nav(a,dt){
     case 'straight': straight(a,dt); break;
   }
 }
+const DECISION=0.5*NM;   // LDG-05: auto go-around point without landing clearance (~150 ft)
 function approach(a,dt){
   const {R,along,xt}=rwyFrame(a,a.app.end);
   const hd=Math.abs(norm180(a.hdg-R.qfu));
@@ -736,10 +744,11 @@ function approach(a,dt){
     if(Math.abs(xt)<250&&hd<35){ a.app.est=true; a.status=(a.app.visual?'Görerek yaklaşma ':'ILS yakalandı ')+a.app.end; renderStrips(); }
   } else {
     a.tgt.hdg=norm360(R.qfu-clamp(xt/25,-15,15));
-    const gp=R.elev+Math.max(0,along)/NM*318+50;
+    const tdz=a.ldg&&a.tdz?a.tdz:300, gp=R.elev+Math.max(0,along+tdz)/NM*318;
     if(a.alt>gp-30) a.glide=gp;
-    a.tgt.spd=along>8*NM?Math.min(a.tgt.spd,210):along>5*NM?180:along>3*NM?a.perf.vapp+15:a.perf.vapp;
-    if(along<=60){ if(a.ldg) touchdown(a,R); else goAround(a,'İniş izni yok'); }
+    a.tgt.spd=along>8*NM?Math.min(a.tgt.spd,210):along>5*NM?180:along>3*NM?a.perf.vapp+15:along>0.3*NM?a.perf.vapp:a.perf.vref;
+    if(!a.ldg&&along<=DECISION){ goAround(a,'iniş izni yok, karar noktası'); return; }
+    if(a.ldg&&along<=-tdz+15){ if(a.perf.gear&&a.gearK<1){ goAround(a,'iniş takımı kilitlenmedi'); return; } touchdown(a,R); }
   }
 }
 // ---------- traffic pattern (APP-01..04) ----------
@@ -794,9 +803,9 @@ function straight(a,dt){ const S_=a.si, {R,along,xt}=rwyFrame(a,S_.end), hd=Math
   if(S_.ph==='to5'){ a.tgt.alt=R.elev+1600; a.tgt.spd=a.perf.vapp+20; a.tgt.hdg=norm360(R.qfu-clamp(xt/25,-30,30));
     if(along<=5*NM){ a.nav='app'; a.app={end:S_.end,est:true,visual:false,ph:'int',fd:0,si:true}; a.status='Straight-in final '+S_.end+(a.ldg?' · iniş izni':''); renderStrips(); renderFMS(); } }
 }
-function touchdown(a,R){ a.air=false; a.alt=R.elev; a.vs=0; a.nav='hdg'; a.mode='rollout'; a.hdg=R.qfu; a.rollEnd=R.end; a.status='İndi '+R.end; a.ldg=false; renderStrips(); toast(`${a.cs} ${R.end} pistine indi`); }
-function goAround(a,why){ const R=RW[a.app?a.app.end:a.rwy]; a.nav='hdg'; a.tgt.hdg=R?R.qfu:a.hdg; a.tgt.alt=Math.max(a.alt+1000,ELEV+3000); a.tgt.spd=Math.max(a.ias,a.perf.vapp+25); a.app=null; a.ldg=false;
-  a.status='Pas geçti'+(why?' ('+why+')':''); renderStrips(); toast(`${a.cs} pas geçiyor${why?': '+why:''}`); }
+function touchdown(a,R){ a.air=false; a.alt=R.elev; a.vs=0; a.nav='hdg'; a.mode='rollout'; a.hdg=R.qfu; a.rollEnd=R.end; a.status='İndi '+R.end; a.ldg=false; a.ga=false; renderStrips(); renderFMS(); toast(`${a.cs} ${R.end} pistine ${a.tdz||300} m'de indi`); a.tdz=null; }
+function goAround(a,why){ const R=RW[a.app?a.app.end:a.rwy]; a.nav='hdg'; a.tgt.hdg=R?R.qfu:a.hdg; a.tgt.alt=Math.max(a.alt+1000,ELEV+3000); a.tgt.spd=Math.max(a.ias,a.perf.vapp+25); a.app=null; a.ldg=false; a.tdz=null; a.cir=null; a.si=null;
+  a.gearUp=a.perf.gear; a.ga=true; a.status='GO-AROUND'+(why?' ('+why+')':''); renderStrips(); renderFMS(); toast(`GO-AROUND: ${a.cs}${why?' · '+why:''}`); }
 function stepTakeoff(a,dt){
   const R=RW[a.toEnd]; a.ias+=a.perf.acc*dt;
   const v=hv(R.qfu); a.pos=[a.pos[0]+v[0]*a.ias*KT*dt,a.pos[1]+v[1]*a.ias*KT*dt]; a.hdg=R.qfu;
@@ -807,7 +816,7 @@ function stepStopRun(a,dt){ a.ias=Math.max(0,a.ias-a.perf.dec*dt); const v=hv(a.
   if(a.ias<=0){ a.mode='stopped'; a.status='Kalkış iptal edildi, pistte durdu'; renderStrips(); renderFMS(); } }
 const rtoLimit=a=>a.perf.v1??a.perf.vr;   // types without V1: cancel possible until VR
 function stepRollout(a,dt){
-  const R=RW[a.rollEnd]; a.ias=Math.max(18,a.ias-2.6*dt);
+  const R=RW[a.rollEnd]; a.ias=Math.max(18,a.ias-(a.ias>60?a.perf.dec*0.8:1.6)*dt);
   const {along,xt}=rwyFrame(a,a.rollEnd); a.hdg=norm360(R.qfu-clamp(xt/20,-5,5));
   const v=hv(a.hdg); a.pos=[a.pos[0]+v[0]*a.ias*KT*dt,a.pos[1]+v[1]*a.ias*KT*dt];
   if(a.ias<=18.01){ // find the next exit ahead
@@ -913,7 +922,7 @@ function cmd(k){
       a.status=(k==='visual'?'Görerek yaklaşma ':'ILS ')+a.rwy; break; }
     case 'landing': { if(!a.air){ toast('Uçak havada değil.'); return; }
       if(a.nav!=='app'&&a.nav!=='circuit'&&a.nav!=='straight'){ toast('Önce yaklaşma (APPROACH, görerek ya da VFR tur) ver.'); return; }
-      a.ldg=true; a.status+=' · iniş izni'; break; }
+      const E=(a.app&&a.app.end)||(a.cir&&a.cir.end)||(a.si&&a.si.end)||a.rwy; setMode({k:'tdz',a,E}); return; }
     case 'orbit': { if(!a.air){ toast('Uçak havada değil.'); return; } a.nav='orbit'; a.orbit={dir:1,left:360,h0:a.hdg}; a.status='Orbit (sağ 360)'; break; }
     case 'goaround': { if(!a.air){ toast('Uçak havada değil.'); return; } goAround(a,''); return; }
     case 'teleport': { setMode({k:'tele',a}); return; }
@@ -932,10 +941,16 @@ function setMode(m){ MODE=m; const el=document.getElementById('mode'); canvas.cl
     document.getElementById('rUndo').onclick=()=>{ m.picks.pop(); rebuildRoute(m); setMode(m); };
     document.getElementById('rX').onclick=()=>setMode(null);
     document.getElementById('rGo').onclick=()=>commitRoute(m); }
+  else if(m.k==='tdz'){ el.innerHTML=`<span><b>${m.a.cs}</b> Landing clearance RWY ${m.E}: touchdown bölgesini seç (haritada ya da buton).</span>`+TDZ.map(d=>`<button class="go" data-tdz="${d}">${d} m</button>`).join('')+`<button id="rX">İptal</button>`;
+    document.getElementById('rX').onclick=()=>setMode(null); el.querySelectorAll('[data-tdz]').forEach(b=>b.onclick=()=>clearLand(m.a,m.E,+b.dataset.tdz)); }
   else if(m.k==='tele'){ el.innerHTML=`<span><b>${m.a.cs}</b> Reposition: yeni konumu haritada tıkla.</span><button id="rX">İptal</button>`; document.getElementById('rX').onclick=()=>setMode(null); }
   else if(m.k==='meas'){ const d=m.pts.length===2?dist(m.pts[0],m.pts[1])/NM:null; el.innerHTML=`<span>Mesafe ölçümü: ${m.pts.length<2?(m.pts.length?'ikinci noktayı':'birinci noktayı')+' tıkla.':'<b>'+d.toFixed(2)+' NM</b> · bir noktayı değiştirmek için yeni yere tıkla (yakın olan nokta taşınır).'}</span><button id="rX">Kapat</button>`; document.getElementById('rX').onclick=()=>setMode(null); }
   else if(m.k==='place'){ el.innerHTML=`<span>Konumu haritada tıkla.</span><button id="rX">İptal</button>`; document.getElementById('rX').onclick=()=>{ setMode(null);  }; }
 }
+const TDZ=[300,450,600];   // touchdown zones (m past the threshold)
+const tdzPt=(E,d)=>[RW[E].thr[0]+RW[E].u[0]*d,RW[E].thr[1]+RW[E].u[1]*d];
+function clearLand(a,E,d){ if(!a.air){ setMode(null); return; } a.ldg=true; a.tdz=d; a.rwy=E; if(a.perf.gear&&!a.gearDown){ a.gearDown=true; }
+  a.status=`Cleared to land RWY ${E} · TDZ ${d} m · gear down`; setMode(null); toast(`${a.cs} cleared to land RWY ${E} (touchdown ${d} m)`); renderStrips(); renderFMS(); }
 function beginRoute(a,why){ setMode({k:'route',a,why,picks:[],preview:null}); }
 function rebuildRoute(m){
   const a=m.a; if(!m.picks.length){ m.preview=null; return; }
@@ -1036,6 +1051,7 @@ function simStep(dt){
     else if(a.mode==='rollout') stepRollout(a,dt);
     else if(a.air) stepAir(a,dt);
   }
+  for(const a of TR) if(a.kind==='ac'){ if(!a.perf.gear) a.gearDown=true; const t=a.gearDown?1:0; a.gearK=a.gearK==null?t:a.gearK+clamp(t-a.gearK,-dt/6,dt/6); }
   checkCollisions();
 }
 setInterval(()=>{ const now=performance.now(); let dt=(now-simLast)/1000; simLast=now; dt=Math.min(dt,1); simStep(dt); broadcast(); iconState(); },100);
@@ -1102,6 +1118,11 @@ function draw(){
   // route preview
   if(MODE&&MODE.k==='route'&&MODE.preview){ ctx.strokeStyle='#00e5ff'; ctx.lineWidth=3; line(MODE.preview.pts); ctx.stroke();
     MODE.picks.forEach((p,i)=>{ const q=S([NODES[p].x,NODES[p].y]); ctx.fillStyle='#00e5ff'; ctx.beginPath(); ctx.arc(q[0],q[1],7,0,7); ctx.fill(); ctx.fillStyle='#002'; ctx.font='bold 10px system-ui'; ctx.fillText(i+1,q[0]-3,q[1]+3.5); }); }
+  // touchdown zone markers while giving landing clearance
+  if(MODE&&MODE.k==='tdz'){ const R=RW[MODE.E]; ctx.font='bold 11px system-ui';
+    for(const d of TDZ){ const p=tdzPt(MODE.E,d), q=S(p), n=hv(R.qfu+90), a1=S([p[0]+n[0]*R.width/2,p[1]+n[1]*R.width/2]), a2=S([p[0]-n[0]*R.width/2,p[1]-n[1]*R.width/2]);
+      ctx.strokeStyle='#22c55e'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(a1[0],a1[1]); ctx.lineTo(a2[0],a2[1]); ctx.stroke();
+      ctx.fillStyle='#22c55e'; ctx.beginPath(); ctx.arc(q[0],q[1],7,0,7); ctx.fill(); ctx.fillStyle='#fff'; ctx.fillText(d+' m',q[0]+10,q[1]-8); } }
   // distance measurement
   if(MODE&&MODE.k==='meas'&&MODE.pts.length){ const P=MODE.pts.map(S); ctx.strokeStyle='#ffd24a'; ctx.fillStyle='#ffd24a'; ctx.lineWidth=2; ctx.setLineDash([8,5]);
     if(P.length===2){ ctx.beginPath(); ctx.moveTo(P[0][0],P[0][1]); ctx.lineTo(P[1][0],P[1][1]); ctx.stroke(); } ctx.setLineDash([]);
@@ -1145,6 +1166,7 @@ canvas.addEventListener('wheel',e=>{ e.preventDefault(); const r=canvas.getBound
 function click(e){
   const r=canvas.getBoundingClientRect(), mx=e.clientX-r.left,my=e.clientY-r.top, w=W(mx,my);
   if(MODE&&MODE.k==='route'){ const [n,d]=nearestNode(w); if(d*view.s>24){ toast('Bir rota noktasına (pembe/yeşil) tıkla.'); return; } MODE.picks.push(n); rebuildRoute(MODE); setMode(MODE); return; }
+  if(MODE&&MODE.k==='tdz'){ let b=null,bd=30; for(const d of TDZ){ const q=S(tdzPt(MODE.E,d)), dd=Math.hypot(q[0]-mx,q[1]-my); if(dd<bd){ bd=dd; b=d; } } if(b) clearLand(MODE.a,MODE.E,b); else toast('Pist üzerindeki touchdown işaretlerinden birini seç.'); return; }
   if(MODE&&MODE.k==='meas'){ const P=MODE.pts; if(P.length<2) P.push(w); else { const i=dist(P[0],w)<dist(P[1],w)?0:1; P[i]=w; } setMode(MODE); return; }
   if(MODE&&MODE.k==='tele'){ const a=MODE.a; let p=w, h=a.hdg; if(!a.air){ const sn=snapGround(w,a.hdg); if(!sn){ toast('Yerdeki uçak/araç taksi yoluna ya da piste en fazla 150 m uzağa konabilir.'); return; } p=sn.pos; h=sn.hdg; }
     a.pos=p; a.hdg=h; a.path=null; a.rep=(a.rep||0)+1; if(!a.air){ a.mode='stopped'; a.stand=null; a.ias=0; } a.status='Yeniden konumlandı'; setMode(null); renderStrips(); renderFMS(); return; }
@@ -1175,7 +1197,8 @@ function renderStrips(){
 function select(a){ SEL=a||null; renderStrips(); renderFMS(); }
 function renderFMS(){
   const el=document.getElementById('fms'), a=SEL;
-  document.getElementById('pat').hidden=!(a&&a.kind==='ac'&&a.air);
+  document.getElementById('pat').hidden=!(a&&a.kind==='ac'&&a.air); document.getElementById('gaMenu').hidden=!(a&&a.kind==='ac'&&a.air&&a.ga);
+  if(a&&a.ga){ const g=document.getElementById('gaRwy'); if(!g.dataset.for||g.dataset.for!==a.id){ g.value=a.rwy; g.dataset.for=a.id; } }
   if(!a){ el.innerHTML='<div class="none">Bir uçak seç (strip veya harita).</div>'; document.getElementById('xCode').textContent='----'; return; }
   if(a.kind==='veh'){ el.innerHTML=`<div class="r1"><span class="box">${a.type}</span></div><div class="cs">${a.cs}</div><div class="st">${a.status}</div>`; document.getElementById('xCode').textContent='----'; return; }
   el.innerHTML=`<div class="r1"><span class="box">${a.type}</span><span class="box tg ${a.rules==='I'?'on':''}" data-r="I">I</span><span class="box tg ${a.rules==='V'?'on':''}" data-r="V">V</span><span class="box">${a.perf.w}</span><span class="box" style="margin-left:auto">${a.air?'AIR':'GND'}</span></div>
@@ -1243,6 +1266,8 @@ function drawPFD(){
   pc.fillStyle='#111'; pc.fillRect(56,h-38,w-112,30); pc.fillStyle='#fff'; pc.font='bold 14px monospace'; pc.textAlign='center';
   pc.fillText('HDG '+pad3(a?a.hdg:0)+(a?'  GS '+Math.round(a.gs||a.ias||0):''),cx,h-18); pc.textAlign='left';
   pc.fillStyle='#9fb6c2'; pc.font='10px monospace'; pc.fillText(a?`VS ${Math.round(a.vs||0)}`:'',w-54,h-10);
+  if(a){ const k=a.gearK??1, fixed=!a.perf.gear; pc.font='bold 10px monospace'; pc.fillStyle=fixed?'#9fb6c2':k>=1?'#4ade80':k<=0?'#d0d7de':'#ffb547';
+    pc.fillText(fixed?'GEAR FIX':k>=1?'GEAR DN':k<=0?'GEAR UP':'GEAR ↕',4,h-10); }
   requestAnimationFrame(drawPFD);
 }
 
@@ -1356,7 +1381,16 @@ $('acmGo').onclick=()=>{ if(acmKind==='cross'){ const a=SEL; if(!a||!a._crossSel
 const _nav=nav; nav=function(a,dt){ if(a.nav==='hdgdir'){ a.glide=null; a.forceTurn=0; if(Math.abs(norm180(a.tgt.hdg-a.hdg))>5) a.forceTurn=a.turnDir; else a.nav='hdg'; return; } _nav(a,dt); };
 { const J=$('patJoin'); ['21L','21R','03R','03L'].forEach(E=>{ for(const h of ['L','R']){ const b=document.createElement('button'); b.textContent=h==='L'?E+' Downwind':E+' Right-Hand Downwind'; b.onclick=()=>joinPattern(SEL,E,h); J.appendChild(b); } });
   const SI=$('patSI'); ['03L','03R','21L','21R'].forEach(E=>{ const b=document.createElement('button'); b.textContent=E; b.title='Straight-In '+E; b.onclick=()=>straightIn(SEL,E); SI.appendChild(b); });
-  document.querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>patCmd(b.dataset.pc)); }
+  document.querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>patCmd(b.dataset.pc));
+  $('gaRwy').innerHTML=ENDS.map(e=>`<option>${e}</option>`).join('');
+  document.querySelectorAll('[data-ga]').forEach(b=>b.onclick=()=>gaCmd(b.dataset.ga)); }
+function gaCmd(k){ const a=SEL; if(!a||a.kind!=='ac'||!a.air){ toast('Havadaki bir uçak seç.'); return; }
+  if(k==='L'||k==='R'||k==='H'){ const n=+$('gaHdg').value; if(!(n>=1&&n<=360)){ toast('Heading 001–360 arası olmalı.'); return; }
+    a.app=null; a.cir=null; a.si=null; a.tgt.hdg=norm360(n); if(k==='H'){ a.nav='hdg'; a.status='Heading '+pad3(n); } else { a.nav='hdgdir'; a.turnDir=k==='L'?-1:1; a.status=(k==='L'?'Turn left ':'Turn right ')+'heading '+pad3(n); } }
+  if(k==='S'){ const n=+$('gaSpd').value, er=speedError(a,n); if(!n||er){ toast(er||'IAS gir.'); return; } a.tgt.spd=n; a.status='Hız '+n+' kt'; }
+  if(k==='A'){ const n=+$('gaAlt').value; if(!n){ toast('İrtifa gir.'); return; } if(n>a.perf.ceil){ toast(`${a.perf.name} için en yüksek irtifa ${a.perf.ceil} ft.`); return; } if(n<ELEV+500){ toast('İrtifa meydan seviyesinin en az 500 ft üstünde olmalı.'); return; } a.tgt.alt=n; a.status=(n>a.alt?'Tırman ':'Alçal ')+n+' ft'; }
+  if(k==='DL'||k==='DR'){ joinPattern(a,$('gaRwy').value,k==='DL'?'L':'R'); a.ga=false; }
+  renderStrips(); renderFMS(); }
 // pattern lines on the map (APP-04)
 const PATV={on:false,end:null,hand:'L',legs:{dep:1,up:1,cw:1,dw:1,base:1,fin:1}};
 $('plRwy').innerHTML=ENDS.map(e=>`<option>${e}</option>`).join(''); $('plRwy').value=activeRwy;
@@ -1430,7 +1464,7 @@ function broadcast(force){ const now=Date.now(); if(!force&&now-lastB<90) return
   const msg={t:'state',wx:{inp:WX.inp,cur:WX.cur,hist:WX.hist.slice(-600),active:activeRwy},
     traffic:TR.map(a=>{ let v=[0,0],vz=0; if(a._bp){ const dt=(now-a._bt)/1000; if(dt>0.02){ v=[(a.pos[0]-a._bp[0])/dt,(a.pos[1]-a._bp[1])/dt]; vz=(a.alt-a._ba)/dt; } }
       a._bp=a.pos.slice(); a._ba=a.alt; a._bt=now;
-      return {id:a.id,kind:a.kind,cs:a.cs,type:a.type,airline:a.airline,rep:a.rep||0,eng:!!a.eng,gear:a.kind==='ac'?!!a.gearDown:true,crash:a.mode==='crash',pos:a.pos,hdg:a.hdg,alt:a.alt,air:!!a.air,ias:a.ias,v:[+v[0].toFixed(2),+v[1].toFixed(2)],vz:+vz.toFixed(2)}; })};
+      return {id:a.id,kind:a.kind,cs:a.cs,type:a.type,airline:a.airline,rep:a.rep||0,eng:!!a.eng,gear:a.kind==='ac'?+(a.gearK??1).toFixed(2):1,crash:a.mode==='crash',pos:a.pos,hdg:a.hdg,alt:a.alt,air:!!a.air,ias:a.ias,v:[+v[0].toFixed(2),+v[1].toFixed(2)],vz:+vz.toFixed(2)}; })};
   try{ bc&&bc.postMessage(msg); }catch(e){}
   if(NET.on) NET.sendState(force?{wx:{inp:WX.inp},wxc:WX.cur,traffic:msg.traffic}:{wxc:WX.cur,traffic:msg.traffic});
   try{ localStorage.setItem('twrsim.wx',JSON.stringify(msg.wx)); }catch(e){} }
@@ -1451,7 +1485,7 @@ let toastT=0; function toast(m){ const t=$('toast'); t.textContent=m; t.style.op
 // boot
 resize(); buildWxInputs(); for(let i=0;i<5;i++) WX.tick(1); renderAWOS(); renderStrips(); renderFMS();
 requestAnimationFrame(draw); requestAnimationFrame(drawPFD);
-window.__sim={toScreen:p=>S(p),TR,RW,NODES,EDGES,STANDS,addAircraft,addVehicle,cmd,select,setMode,rebuildRoute,commitRoute,simStep,view,WX,joinPattern,patCmd,straightIn,PATV,patLegs,dijkstra,nearestNode,RWP,rwyX,rwyGates,onRwy,openCross,get MODE(){return MODE;}};
+window.__sim={toScreen:p=>S(p),TR,RW,NODES,EDGES,STANDS,addAircraft,addVehicle,cmd,select,setMode,rebuildRoute,commitRoute,simStep,view,WX,joinPattern,patCmd,straightIn,clearLand,gaCmd,PATV,patLegs,dijkstra,nearestNode,RWP,rwyX,rwyGates,onRwy,openCross,get MODE(){return MODE;}};
 </script>
 </body>
 </html>

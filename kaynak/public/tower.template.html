@@ -411,7 +411,7 @@ function trafficFrame(now){
     else { o.r[0]+=(tx-o.r[0])*k; o.r[1]+=(ty-o.r[1])*k; o.ra+=(ta-o.ra)*k; o.rh+=(((a.hdg-o.rh)%360+540)%360-180)*kh; }
     const h=a.kind==='veh'?0:Math.max(0,(o.ra-DATA.elev_ft)*0.3048);
     MODELS.animate(o.g,now/1000,{eng:a.kind==='ac'&&a.eng!==false,ias:a.ias});
-    { const ud=o.g.userData; if(ud&&ud.gear&&!ud.gearFixed) ud.gear.visible=a.gear!==false; }
+    { const ud=o.g.userData; if(ud&&ud.gear&&!ud.gearFixed){ const k=typeof a.gear==='number'?a.gear:(a.gear===false?0:1), H=(ud.spec.gear.h||1)+(ud.spec.gear.wr||0.3)*2; ud.gear.visible=k>0.03; ud.gear.scale.y=Math.max(0.03,k); ud.gear.position.y=(1-k)*H; } }  // gear extends/retracts in step with the pilot screen
     if(a.crash&&!o.fire){ o.fire=MODELS.fire(a.kind==='veh'?0.5:Math.max(0.6,Math.min(2.2,((MODELS.SPEC[a.type]||{}).L||30)/30))); scene.add(o.fire); }
     if(o.fire){ if(!a.crash){ scene.remove(o.fire); o.fire=null; } else { o.fire.position.set(o.r[0],h,-o.r[1]); MODELS.animateFire(o.fire,now/1000); } }
     o.g.position.set(o.r[0],h,-o.r[1]); o.g.rotation.y=-o.rh*Math.PI/180;
