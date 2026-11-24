@@ -259,6 +259,7 @@ const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
   g.fillStyle='#a3a29c'; for(const p of DATA.pavement){ poly(p); g.fill(); }
   g.fillStyle='#8f8462'; for(const p of DATA.holes){ poly(p); g.fill(); }
   g.strokeStyle='#a3a29c'; g.lineJoin='round';
+  g.lineCap='round'; for(const e of DATA.taxi.edges){ if(e.kind==='runway') continue; g.beginPath(); e.pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); g.lineWidth=(e.kind==='leadin'?16:23)/R; g.stroke(); } g.lineCap='butt';
   for(const l of (DATA.pave_lines||[])){ g.beginPath(); l.pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); g.lineWidth=l.w/R; g.stroke(); }
   for(const r of DATA.runways){ const q=rwyGeom(r), hw=r.width/2;
     g.fillStyle='#45484b'; poly(rect(q.a,q.u,q.n,-r.stopway,0,hw)); g.fill(); poly(rect(q.a,q.u,q.n,q.L,q.L+r.stopway,hw)); g.fill();
@@ -597,5 +598,19 @@ function weatherFrame(dt,now){
 requestAnimationFrame(frame);
 })();
 </script>
+<script>
+// ===================== TWR SİM layout override (editor) =====================
+// The line editor saves the layout here; every screen applies it before the airport is built.
+(function(){ try{ const s=localStorage.getItem('twrsim.layout'); if(!s) return; const L=JSON.parse(s);
+  if(L&&L.taxi&&L.taxi.nodes&&L.taxi.edges){ DATA.taxi=L.taxi; if(L.stands) DATA.stands=L.stands; if(L.holding_points) DATA.holding_points=L.holding_points; window.__layoutVer=L.v||0; } }catch(e){} })();
+// shared copy (db): when someone saves a newer layout, take it and reload once
+(async function(){ try{ if(!window.claude||!claude.use) return; const db=await claude.use('db'); if(!db) return; window.__layoutDb=db;
+  db.doc('layout/current').onSnapshot(s=>{ if(!s.exists){ return; } const d=s.data(); if(!d) return;
+    if(d.reset){ try{ if(localStorage.getItem('twrsim.layout')){ localStorage.removeItem('twrsim.layout'); if(sessionStorage.getItem('twrsim.layoutReload')!==String(d.v)){ sessionStorage.setItem('twrsim.layoutReload',String(d.v)); location.reload(); } } }catch(e){} return; }
+    if(!d.json) return;
+    let cur=0; try{ cur=(JSON.parse(localStorage.getItem('twrsim.layout')||'null')||{}).v||0; }catch(e){}
+    if(d.v&&d.v!==cur){ try{ localStorage.setItem('twrsim.layout',d.json); if(sessionStorage.getItem('twrsim.layoutReload')!==String(d.v)){ sessionStorage.setItem('twrsim.layoutReload',String(d.v)); location.reload(); } }catch(e){} } },()=>{}); }catch(e){} })();
+</script>
+
 </body>
 </html>

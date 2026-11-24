@@ -293,6 +293,20 @@ const DATA = __DATA__;
 const GEO = __GEO__;
 </script>
 <script>
+// ===================== TWR SİM layout override (editor) =====================
+// The line editor saves the layout here; every screen applies it before the airport is built.
+(function(){ try{ const s=localStorage.getItem('twrsim.layout'); if(!s) return; const L=JSON.parse(s);
+  if(L&&L.taxi&&L.taxi.nodes&&L.taxi.edges){ DATA.taxi=L.taxi; if(L.stands) DATA.stands=L.stands; if(L.holding_points) DATA.holding_points=L.holding_points; window.__layoutVer=L.v||0; } }catch(e){} })();
+// shared copy (db): when someone saves a newer layout, take it and reload once
+(async function(){ try{ if(!window.claude||!claude.use) return; const db=await claude.use('db'); if(!db) return; window.__layoutDb=db;
+  db.doc('layout/current').onSnapshot(s=>{ if(!s.exists){ return; } const d=s.data(); if(!d) return;
+    if(d.reset){ try{ if(localStorage.getItem('twrsim.layout')){ localStorage.removeItem('twrsim.layout'); if(sessionStorage.getItem('twrsim.layoutReload')!==String(d.v)){ sessionStorage.setItem('twrsim.layoutReload',String(d.v)); location.reload(); } } }catch(e){} return; }
+    if(!d.json) return;
+    let cur=0; try{ cur=(JSON.parse(localStorage.getItem('twrsim.layout')||'null')||{}).v||0; }catch(e){}
+    if(d.v&&d.v!==cur){ try{ localStorage.setItem('twrsim.layout',d.json); if(sessionStorage.getItem('twrsim.layoutReload')!==String(d.v)){ sessionStorage.setItem('twrsim.layoutReload',String(d.v)); location.reload(); } }catch(e){} } },()=>{}); }catch(e){} })();
+</script>
+
+<script>
 /*__WX__*/
 /*__NET__*/
 </script>
@@ -1036,6 +1050,7 @@ function draw(){
   if(s>0.004){
     ctx.fillStyle='#8f9499'; DATA.pavement.forEach(p=>{poly(p);ctx.fill();});
     ctx.fillStyle='#1e2a23'; DATA.holes.forEach(p=>{poly(p);ctx.fill();});
+    { ctx.strokeStyle='#8f9499'; ctx.lineJoin='round'; ctx.lineCap='round'; const EL=(window.EDH&&EDH.on)?EDH.L.edges:EDGES; for(const e of EL){ if(e.kind==='runway') continue; ctx.lineWidth=(e.kind==='leadin'?16:23)*s; line(e.pts); ctx.stroke(); } ctx.lineCap='butt'; }
     ctx.strokeStyle='#8f9499'; ctx.lineCap='butt'; for(const l of (DATA.pave_lines||[])){ line(l.pts); ctx.lineWidth=l.w*s; ctx.stroke(); } ctx.lineCap='round';
     if(DATA.buildings&&s>0.05){ ctx.lineWidth=1; DATA.buildings.forEach(b=>{poly(b.pts);ctx.fillStyle='#4f7fb3';ctx.fill();ctx.strokeStyle='#22405f';ctx.stroke();}); }
     for(const r of DATA.runways){ const a=r.thr[r.ends[0]].xy,b=r.thr[r.ends[1]].xy,L=dist(a,b),n=[-(b[1]-a[1])/L*r.width/2,(b[0]-a[0])/L*r.width/2];
@@ -1050,24 +1065,25 @@ function draw(){
         for(const k in L){ if(!PATV.legs[k]) continue; ctx.strokeStyle=col[k]; ctx.lineWidth=2; ctx.setLineDash(k==='up'?[6,6]:[]); line(L[k]); ctx.stroke(); ctx.setLineDash([]);
           const m=S([(L[k][0][0]+L[k][1][0])/2,(L[k][0][1]+L[k][1][1])/2]); ctx.font='11px system-ui'; ctx.fillStyle=col[k]; ctx.fillText(nm[k],m[0]+4,m[1]-4); } } }
     // taxi centrelines
-    if(s>0.08){ EDGES.forEach(e=>{ if(e.kind==='runway') return; line(e.pts);
+    const EDON=!!(window.EDH&&EDH.on);
+    if(s>0.08&&!EDON){ EDGES.forEach(e=>{ if(e.kind==='runway') return; line(e.pts);
         ctx.strokeStyle=e.kind==='taxilane'?'#4cc3ff':e.kind==='leadin'?'#ff6fb5':'#ffd23f';
         ctx.lineWidth=e.kind==='leadin'?Math.max(0.8,Math.min(1.6,1.6*s)):Math.max(1,Math.min(2.2,2.4*s)); ctx.stroke(); }); }
     // runway labels
     if(s>0.03){ ctx.font='bold 12px ui-monospace,Menlo,monospace'; ctx.fillStyle='#fff'; for(const E of ENDS){ const R=RW[E], q=S([R.thr[0]-R.u[0]*90,R.thr[1]-R.u[1]*90]); ctx.fillText(E,q[0]-11,q[1]+4); } }
     // touchdown zones (orange), route points (pink), holding points (green), stands
     // holding points: bars across the taxiway (red = runway HP, orange = intermediate)
-    if(s>0.08){ for(const h of DATA.holding_points){ const hw=h.type==='runway'?14:11, n=h._n||[1,0], a1=S([h.xy[0]+n[0]*hw,h.xy[1]+n[1]*hw]), a2=S([h.xy[0]-n[0]*hw,h.xy[1]-n[1]*hw]);
+    if(s>0.08&&!EDON){ for(const h of DATA.holding_points){ const hw=h.type==='runway'?14:11, n=h._n||[1,0], a1=S([h.xy[0]+n[0]*hw,h.xy[1]+n[1]*hw]), a2=S([h.xy[0]-n[0]*hw,h.xy[1]-n[1]*hw]);
         ctx.strokeStyle=h.type==='runway'?'#ff3b3b':'#ffa424'; ctx.lineWidth=Math.max(2.5,6*s); ctx.beginPath(); ctx.moveTo(a1[0],a1[1]); ctx.lineTo(a2[0],a2[1]); ctx.stroke();
         if(s>0.45){ const q=S(h.xy); ctx.font='11px system-ui'; ctx.fillStyle=h.type==='runway'?'#ffc2c2':'#ffd9a3'; ctx.fillText(h.id,q[0]+9,q[1]-7); } } }
     // stands: pink arrows pointing along the parked heading
-    if(s>0.08){ const r=Math.max(3,Math.min(9,6*s));
+    if(s>0.08&&!EDON){ const r=Math.max(3,Math.min(9,6*s));
       for(const st of DATA.stands){ const q=S(st.xy); ctx.save(); ctx.translate(q[0],q[1]); ctx.rotate(st.hdg*D2R);
         ctx.beginPath(); ctx.moveTo(0,-r*1.5); ctx.lineTo(r,r); ctx.lineTo(0,r*0.4); ctx.lineTo(-r,r); ctx.closePath(); ctx.fillStyle='#ff6fb5'; ctx.fill(); ctx.lineWidth=1; ctx.strokeStyle='#2a0b1a'; ctx.stroke(); ctx.restore();
         if(s>0.55){ ctx.font='bold 11px system-ui'; ctx.fillStyle='#fff'; ctx.strokeStyle='rgba(0,0,0,.75)'; ctx.lineWidth=3; ctx.strokeText(st.id,q[0]+r+2,q[1]+4); ctx.fillText(st.id,q[0]+r+2,q[1]+4); } }
       if(s>0.12){ ctx.font='bold 13px system-ui'; ctx.textAlign='center'; for(const [ap,c] of APRONS){ const q=S(c); ctx.fillStyle='rgba(255,255,255,.85)'; ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.lineWidth=3; ctx.strokeText(ap,q[0],q[1]); ctx.fillText(ap,q[0],q[1]); } ctx.textAlign='left'; } }
     // taxiway names in boxes
-    if(s>0.12){ const done={}; ctx.font='bold 12px system-ui';
+    if(s>0.12&&!EDON){ const done={}; ctx.font='bold 12px system-ui';
       for(const e of EDGES){ if(e.kind!=='taxiway'||!e.name) continue; let len=0; for(let i=0;i<e.pts.length-1;i++) len+=dist(e.pts[i],e.pts[i+1]);
         let t=len/2,i=0; for(;i<e.pts.length-1;i++){ const d=dist(e.pts[i],e.pts[i+1]); if(t<=d) break; t-=d; }
         const a=e.pts[i], b=e.pts[Math.min(i+1,e.pts.length-1)], L=dist(a,b)||1, q=S([a[0]+(b[0]-a[0])*t/L,a[1]+(b[1]-a[1])*t/L]);
@@ -1075,7 +1091,8 @@ function draw(){
         const tw=ctx.measureText(e.name).width+8; ctx.fillStyle='#111'; ctx.fillRect(q[0]-tw/2,q[1]-9,tw,18); ctx.strokeStyle='#ffd23f'; ctx.lineWidth=1; ctx.strokeRect(q[0]-tw/2,q[1]-9,tw,18);
         ctx.fillStyle='#ffd23f'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(e.name,q[0],q[1]); ctx.textAlign='left'; ctx.textBaseline='alphabetic'; } }
     // route points: only while picking a taxi route
-    if(s>0.12&&MODE&&MODE.k==='route'){
+    if(EDON) EDH.drawOverlay();
+    else if(s>0.12&&MODE&&MODE.k==='route'){
       NODES.forEach(n=>{ if(ADJ[n.id].length&&ADJ[n.id].every(x=>EDGES[x.e].kind==='runway')) return; const q=S([n.x,n.y]);
         if(n.hp){ ctx.fillStyle='#ff9a1f'; ctx.beginPath(); ctx.arc(q[0],q[1],4.5,0,7); ctx.fill(); }
         else if(n.rp==='blue'){ ctx.fillStyle='#2f8cff'; ctx.beginPath(); ctx.arc(q[0],q[1],4.2,0,7); ctx.fill(); }
@@ -1128,13 +1145,14 @@ function draw(){
 }
 // pan / zoom / click
 let drag=null;
-canvas.addEventListener('pointerdown',e=>{ drag={x:e.clientX,y:e.clientY,cx:view.cx,cy:view.cy,moved:false}; canvas.setPointerCapture(e.pointerId); });
-canvas.addEventListener('pointermove',e=>{ if(!drag) return; const dx=e.clientX-drag.x,dy=e.clientY-drag.y; if(Math.hypot(dx,dy)>7) drag.moved=true; if(drag.moved){ view.cx=drag.cx-dx/view.s; view.cy=drag.cy+dy/view.s; } });
-canvas.addEventListener('dblclick',e=>{ if(!SEL) return; const r=canvas.getBoundingClientRect(), q=S(SEL.pos); if(Math.hypot(q[0]-(e.clientX-r.left),q[1]-(e.clientY-r.top))<20) setMode({k:'tele',a:SEL}); });
-canvas.addEventListener('pointerup',e=>{ const d=drag; drag=null; if(d&&!d.moved) click(e); });
+canvas.addEventListener('pointerdown',e=>{ if(window.EDH&&EDH.down(e)) return; drag={x:e.clientX,y:e.clientY,cx:view.cx,cy:view.cy,moved:false}; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove',e=>{ if(window.EDH&&EDH.move(e)) return; if(!drag) return; const dx=e.clientX-drag.x,dy=e.clientY-drag.y; if(Math.hypot(dx,dy)>7) drag.moved=true; if(drag.moved){ view.cx=drag.cx-dx/view.s; view.cy=drag.cy+dy/view.s; } });
+canvas.addEventListener('dblclick',e=>{ if(window.EDH&&EDH.dbl(e)) return; if(!SEL) return; const r=canvas.getBoundingClientRect(), q=S(SEL.pos); if(Math.hypot(q[0]-(e.clientX-r.left),q[1]-(e.clientY-r.top))<20) setMode({k:'tele',a:SEL}); });
+canvas.addEventListener('pointerup',e=>{ if(window.EDH&&EDH.up(e)) return; const d=drag; drag=null; if(d&&!d.moved) click(e); });
 canvas.addEventListener('wheel',e=>{ e.preventDefault(); const r=canvas.getBoundingClientRect(), mx=e.clientX-r.left,my=e.clientY-r.top, before=W(mx,my);
   view.s=clamp(view.s*Math.exp(-e.deltaY*0.0015),Math.max(0.00015,CW/2.4e6),3); const after=W(mx,my); view.cx+=before[0]-after[0]; view.cy+=before[1]-after[1]; },{passive:false});
 function click(e){
+  if(window.EDH&&EDH.click(e)) return;
   const r=canvas.getBoundingClientRect(), mx=e.clientX-r.left,my=e.clientY-r.top, w=W(mx,my);
   if(MODE&&MODE.k==='route'){ const [n,d]=nearestNode(w); if(d*view.s>24){ toast('Bir rota noktasına (pembe/yeşil) tıkla.'); return; } MODE.picks.push(n); rebuildRoute(MODE); setMode(MODE); return; }
   if(MODE&&(MODE.k==='tdz'||MODE.k==='short')){ let b=null,bd=30; for(const d of tdzOf(MODE.E)){ const q=S(tdzPt(MODE.E,d)), dd=Math.hypot(q[0]-mx,q[1]-my); if(dd<bd){ bd=dd; b=d; } } if(b){ if(MODE.k==='short') shortApp(MODE.a,MODE.E,b); else clearLand(MODE.a,MODE.E,b); } else toast('Pist üzerindeki touchdown işaretlerinden birini seç.'); return; }
@@ -1494,5 +1512,210 @@ resize(); buildWxInputs(); for(let i=0;i<5;i++) WX.tick(1); renderAWOS(); render
 requestAnimationFrame(draw); requestAnimationFrame(drawPFD);
 window.__sim={setSimX,get SIMX(){return SIMX},toScreen:p=>S(p),TR,RW,NODES,EDGES,STANDS,addAircraft,addVehicle,cmd,select,setMode,rebuildRoute,commitRoute,simStep,view,WX,joinPattern,patCmd,straightIn,clearLand,gaCmd,lightsOf,SBOFF,setNight,PATV,patLegs,dijkstra,nearestNode,RWP,rwyX,rwyGates,onRwy,openCross,get MODE(){return MODE;}};
 </script>
+<style>
+#edPanel{position:absolute;left:12px;top:56px;z-index:30;width:300px;max-height:calc(100% - 80px);overflow:auto;background:#0c1729f2;border:1px solid var(--line2,#2c4466);border-radius:12px;padding:10px;font-size:12px;color:#e6edf6;box-shadow:0 10px 30px #0008}
+#edPanel h4{margin:0 0 6px;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+#edPanel .tg{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px}
+#edPanel button{font:inherit;color:inherit;background:#15253d;border:1px solid #2c4466;border-radius:7px;padding:6px 6px;cursor:pointer;text-align:left}
+#edPanel button:hover{background:#1a2e4b} #edPanel button.on{background:#1f7a3a;border-color:#2fa356}
+#edPanel label{display:grid;gap:3px;margin:4px 0;color:#9fb3c8}
+#edPanel input,#edPanel select,#edPanel textarea{font:inherit;background:#0a1322;color:#e6edf6;border:1px solid #2c4466;border-radius:6px;padding:5px}
+#edPanel .row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0} #edPanel .row button{flex:1;text-align:center}
+#edPanel .hint{color:#9fb3c8;line-height:1.45;margin:6px 0} #edPanel .sel{background:#10203a;border-radius:8px;padding:6px;margin:6px 0}
+#edPanel .pri{background:#1f7a3a;border-color:#2fa356;font-weight:700;text-align:center}
+#edPanel textarea{width:100%;height:90px;box-sizing:border-box}
+</style>
+<script>
+// ===================== Line editor (taxi lines, stands, HPs, route points) =====================
+(function(){
+const $=id=>document.getElementById(id);
+const clone=o=>JSON.parse(JSON.stringify(o));
+const ED={on:false,tool:'move',L:null,undo:[],sel:null,draw:null,drag:null,hover:null,dirty:false};
+window.EDH=ED;
+function begin(){ ED.L={nodes:clone(DATA.taxi.nodes),edges:clone(DATA.taxi.edges).map(e=>({a:e.a,b:e.b,name:e.name,kind:e.kind,pts:e.pts})),stands:clone(DATA.stands),hps:clone(DATA.holding_points)};
+  ED.undo=[]; ED.sel=null; ED.draw=null; ED.dirty=false; }
+function snap(){ ED.undo.push(JSON.stringify(ED.L)); if(ED.undo.length>60) ED.undo.shift(); ED.dirty=true; }
+function N(i){ return ED.L.nodes[i]; } const P=n=>[n.x,n.y];
+function addNode(p,extra){ const id=ED.L.nodes.length; ED.L.nodes.push(Object.assign({id,x:+p[0].toFixed(1),y:+p[1].toFixed(1)},extra||{})); return id; }
+const r1=v=>+v.toFixed(1);
+// ---------- hit tests (screen px) ----------
+function mouse(e){ const r=canvas.getBoundingClientRect(); return [e.clientX-r.left,e.clientY-r.top]; }
+function used(){ const u=new Set(); ED.L.edges.forEach(e=>{u.add(e.a);u.add(e.b);}); return u; }
+function hitNode(m,tol){ let b=-1,bd=tol||10; const u=used(); ED.L.nodes.forEach((n,i)=>{ if(!u.has(i)) return; const q=S(P(n)), d=Math.hypot(q[0]-m[0],q[1]-m[1]); if(d<bd){bd=d;b=i;} }); return b; }
+function hitVertex(m){ let b=null,bd=9; ED.L.edges.forEach((e,ei)=>{ for(let k=1;k<e.pts.length-1;k++){ const q=S(e.pts[k]), d=Math.hypot(q[0]-m[0],q[1]-m[1]); if(d<bd){bd=d;b={ei,k};} } }); return b; }
+function segProj(p,a,b){ const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1, t=Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/L2)); return [[a[0]+dx*t,a[1]+dy*t],t]; }
+function hitEdge(m,tol,filter){ const w=W(m[0],m[1]); let best=null,bd=(tol||8)/view.s;
+  ED.L.edges.forEach((e,ei)=>{ if(filter&&!filter(e)) return; for(let k=0;k<e.pts.length-1;k++){ const [q]=segProj(w,e.pts[k],e.pts[k+1]), d=dist(q,w); if(d<bd){bd=d;best={ei,k,q};} } }); return best; }
+function hitStand(m){ let b=-1,bd=12; ED.L.stands.forEach((s,i)=>{ const q=S(s.xy), d=Math.hypot(q[0]-m[0],q[1]-m[1]); if(d<bd){bd=d;b=i;} }); return b; }
+function hitHp(m){ let b=-1,bd=12; ED.L.hps.forEach((h,i)=>{ const q=S(h.xy), d=Math.hypot(q[0]-m[0],q[1]-m[1]); if(d<bd){bd=d;b=i;} }); return b; }
+// split edge ei at segment k / point q -> node id
+function splitAt(h,extra){ const e=ED.L.edges[h.ei];
+  if(dist(h.q,e.pts[0])<1) { Object.assign(N(e.a),extra||{}); return e.a; }
+  if(dist(h.q,e.pts[e.pts.length-1])<1){ Object.assign(N(e.b),extra||{}); return e.b; }
+  const n=addNode(h.q,extra), p1=e.pts.slice(0,h.k+1).concat([[r1(h.q[0]),r1(h.q[1])]]), p2=[[r1(h.q[0]),r1(h.q[1])]].concat(e.pts.slice(h.k+1));
+  ED.L.edges.push({a:n,b:e.b,name:e.name,kind:e.kind,pts:p2}); e.b=n; e.pts=p1; return n; }
+// a point where the drawing snaps: existing node, a point on a line, or free
+function pickPoint(m){ const n=hitNode(m,11); if(n>=0) return {node:n};
+  const si=hitStand(m); if(si>=0) return {free:ED.L.stands[si].xy.slice()};
+  const h=hitEdge(m,9); if(h) return {edge:h};
+  return {free:W(m[0],m[1])}; }
+function resolve(pk){ if(pk.node!=null) return pk.node; if(pk.edge) return splitAt(pk.edge); return addNode(pk.free); }
+// ---------- tools ----------
+function setTool(t){ ED.tool=t; ED.draw=null; document.querySelectorAll('#edPanel [data-tool]').forEach(b=>b.classList.toggle('on',b.dataset.tool===t)); $('edHint').textContent=HINT[t]||''; render(); }
+const HINT={
+ move:'Noktayı (uç, köşe) sürükle. Çizginin ortasından sürüklersen yeni bir kıvrım noktası oluşur. Çizgiye tıkla: seçilir, adını/türünü değiştir.',
+ draw:'Tıkla tıkla çiz. Var olan çizgiye ya da noktaya tıklarsan oraya bağlanır. Çift tık ya da Enter: bitir. Esc: vazgeç.',
+ del:'Silmek istediğin çizgiye, noktaya, park pozisyonuna ya da HP\'ye tıkla.',
+ stand:'Var olan park noktaları pembe görünür: çizgiyi çizerken pembe noktaya tıklarsan çizgi oraya bağlanır ve park otomatik ayarlanır. Yeni park için: park girişi çizgisinin UCUNA tıkla (uçağın burun tekerinin duracağı yer). Numara aşağıdaki kutudan alınır, sonra bir artar. Var olan bir park numarasına tıklarsan onu taşırsın.',
+ hp:'Holding point koymak istediğin yere, taksi yolu çizgisinin üstüne tıkla. Pist otomatik bulunur.',
+ green:'Yeşil rota noktası: çizginin üstüne tıkla. Var olan yeşil noktaya tıklarsan kalkar.',
+ blue:'Mavi pist noktası: pist orta çizgisinin üstüne tıkla. Var olan mavi noktaya tıklarsan kalkar.'};
+function nearestRwy(p){ let best=null; for(const E of ENDS){ const R=RW[E]; const v=[p[0]-R.thr[0],p[1]-R.thr[1]], xt=Math.abs(v[0]*R.u[1]-v[1]*R.u[0]); if(!best||xt<best.xt) best={rwy:R.rwy,xt}; } return best; }
+function standHdg(n){ const e=ED.L.edges.find(e=>e.a===n||e.b===n); if(!e) return 0; const p=e.b===n?e.pts:e.pts.slice().reverse(); let acc=0,a=p[p.length-1],k=p.length-1;
+  while(k>0&&acc<30){ acc+=dist(p[k],p[k-1]); k--; a=p[k]; } return +brg(a,p[p.length-1]).toFixed(1); }
+function nextId(v){ const m=/^(.*?)(\d+)$/.exec(v); return m?m[1]+(+m[2]+1):v; }
+ED.down=function(e){ if(!ED.on) return false; const m=mouse(e);
+  if(ED.tool==='move'){ const n=hitNode(m,10); if(n>=0){ snap(); ED.drag={node:n}; canvas.setPointerCapture(e.pointerId); return true; }
+    const v=hitVertex(m); if(v){ snap(); ED.drag={v}; canvas.setPointerCapture(e.pointerId); return true; }
+    const h=hitEdge(m,7); if(h){ ED.drag={pending:h,x:m[0],y:m[1]}; canvas.setPointerCapture(e.pointerId); return true; } }
+  return false; };
+ED.move=function(e){ if(!ED.on) return false; const m=mouse(e); ED.hover=W(m[0],m[1]);
+  const d=ED.drag; if(!d) return false;
+  if(d.pending){ if(Math.hypot(m[0]-d.x,m[1]-d.y)<5) return true; snap(); const e2=ED.L.edges[d.pending.ei]; e2.pts.splice(d.pending.k+1,0,[r1(d.pending.q[0]),r1(d.pending.q[1])]); ED.drag={v:{ei:d.pending.ei,k:d.pending.k+1}}; }
+  const w=W(m[0],m[1]), p=[r1(w[0]),r1(w[1])];
+  if(ED.drag.node!=null){ const n=N(ED.drag.node); n.x=p[0]; n.y=p[1]; ED.L.edges.forEach(x=>{ if(x.a===ED.drag.node) x.pts[0]=p.slice(); if(x.b===ED.drag.node) x.pts[x.pts.length-1]=p.slice(); });
+    ED.L.stands.forEach(s=>{ if(s._n===ED.drag.node) s.xy=p.slice(); }); }
+  else if(ED.drag.v){ ED.L.edges[ED.drag.v.ei].pts[ED.drag.v.k]=p; }
+  return true; };
+ED.up=function(e){ if(!ED.on) return false; const d=ED.drag; ED.drag=null; if(!d) return false;
+  if(d.pending){ ED.undo.length&&0; select({edge:d.pending.ei}); return true; }   // a plain click on a line selects it
+  if(d.node!=null){ fixStands(); } render(); return true; };
+ED.click=function(e){ if(!ED.on) return false; const m=mouse(e), w=W(m[0],m[1]);
+  switch(ED.tool){
+   case 'move': { const h=hitEdge(m,8); select(h?{edge:h.ei}:null); break; }
+   case 'draw': { const pk=pickPoint(m);
+     if(!ED.draw){ snap(); ED.draw={from:resolve(pk),pts:[]}; ED.draw.pts=[P(N(ED.draw.from))]; break; }
+     if(pk.node!=null||pk.edge){ const n=resolve(pk); finishDraw(n); break; }
+     ED.draw.pts.push(pk.free); break; }
+   case 'del': { let i=hitStand(m); if(i>=0){ snap(); ED.L.stands.splice(i,1); break; }
+     i=hitHp(m); if(i>=0){ snap(); ED.L.hps.splice(i,1); break; }
+     const n=hitNode(m,9); if(n>=0&&!N(n).thr){ snap(); ED.L.edges=ED.L.edges.filter(x=>x.a!==n&&x.b!==n); ED.L.stands=ED.L.stands.filter(s=>dist(s.xy,P(N(n)))>2); break; }
+     const h=hitEdge(m,8); if(h){ snap(); ED.L.edges.splice(h.ei,1); ED.sel=null; } break; }
+   case 'stand': { const id=$('edStandId').value.trim(); if(!id){ toast('Önce park numarasını yaz.'); break; }
+     const n=hitNode(m,12); if(n<0){ toast('Park girişi çizgisinin ucuna (noktaya) tıkla.'); break; }
+     snap(); const old=ED.L.stands.findIndex(s=>s.id===id); const s={id,apron:$('edApron').value||'APRON',xy:[N(n).x,N(n).y],hdg:standHdg(n),lead_len:0};
+     const e=ED.L.edges.find(x=>x.a===n||x.b===n); if(e){ e.kind='leadin'; e.name='STAND '+id; if(e.a===n){ e.a=e.b; e.b=n; e.pts.reverse(); } s.lead_len=+plen(e.pts).toFixed(1); }
+     ED.L.stands=ED.L.stands.filter((x,i)=>i!==old&&dist(x.xy,s.xy)>2); ED.L.stands.push(s); $('edStandId').value=nextId(id); toast('Park '+id+' kondu'); break; }
+   case 'hp': { const h=hitEdge(m,10,x=>x.kind!=='runway'&&x.kind!=='leadin'); if(!h){ toast('Taksi yolu çizgisinin üstüne tıkla.'); break; }
+     snap(); const id=$('edHpId').value.trim()||('HP'+(ED.L.hps.length+1)), nr=nearestRwy(h.q), e=ED.L.edges[h.ei];
+     ED.L.hps=ED.L.hps.filter(x=>x.id!==id); ED.L.hps.push({id,twy:e.name,xy:[r1(h.q[0]),r1(h.q[1])],type:'runway',rwy:nr.rwy,dist_cl:+nr.xt.toFixed(1),src:'Editör'}); $('edHpId').value=nextId(id); break; }
+   case 'green': case 'blue': { const rp=ED.tool; const n=hitNode(m,10); if(n>=0&&N(n).rp===rp){ snap(); delete N(n).rp; break; }
+     const h=hitEdge(m,10,x=>rp==='blue'?x.kind==='runway':x.kind!=='runway'); if(!h){ toast(rp==='blue'?'Pist orta çizgisinin üstüne tıkla.':'Taksi yolu çizgisinin üstüne tıkla.'); break; }
+     snap(); splitAt(h,{rp}); break; }
+  }
+  render(); return true; };
+ED.dbl=function(){ if(!ED.on) return false; if(ED.tool==='draw'&&ED.draw) finishDraw(null); return true; };
+function plen(p){ let s=0; for(let i=1;i<p.length;i++) s+=dist(p[i-1],p[i]); return s; }
+function finishDraw(endNode){ const D=ED.draw; ED.draw=null; if(!D) return;
+  let pts=D.pts.map(p=>[r1(p[0]),r1(p[1])]);
+  // a double click adds the last point twice
+  pts=pts.filter((p,i)=>i===0||dist(p,pts[i-1])>0.5);
+  let b=endNode; if(b==null){ if(pts.length<2){ render(); return; } const last=pts.pop(); b=addNode(last); pts.push(last); } else pts.push(P(N(b)));
+  if(pts.length<2||b===D.from&&pts.length<3){ render(); return; }
+  if(+$('edCurve').checked) pts=chaikin(pts,3);
+  ED.L.edges.push({a:D.from,b,name:$('edName').value.trim()||'TWY',kind:$('edKind').value,pts}); select({edge:ED.L.edges.length-1}); render(); }
+function chaikin(P,it){ for(let r=0;r<it;r++){ if(P.length<3) return P; const Q=[P[0]];
+  for(let i=0;i<P.length-1;i++){ const p=P[i],q=P[i+1]; if(i>0) Q.push([r1(.75*p[0]+.25*q[0]),r1(.75*p[1]+.25*q[1])]); if(i<P.length-2) Q.push([r1(.25*p[0]+.75*q[0]),r1(.25*p[1]+.75*q[1])]); }
+  Q.push(P[P.length-1]); P=Q; } return P; }
+function fixStands(){ ED.L.stands.forEach(s=>{ const n=ED.L.nodes.findIndex(n=>dist(P(n),s.xy)<0.5); if(n>=0) s.hdg=standHdg(n); }); }
+function select(s){ ED.sel=s; const box=$('edSel');
+  if(!s||s.edge==null||!ED.L.edges[s.edge]){ box.hidden=true; ED.sel=null; render(); return; }
+  const e=ED.L.edges[s.edge]; box.hidden=false; $('edSName').value=e.name||''; $('edSKind').value=e.kind; $('edSLen').textContent=Math.round(plen(e.pts))+' m'; render(); }
+// ---------- drawing overlay ----------
+const KC={taxiway:'#f1c12b',taxilane:'#f1c12b',leadin:'#ffb070',runway:'#e8e8e2'};
+ED.drawOverlay=function(){ if(!ED.on) return; const L=ED.L, s=view.s;
+  ctx.lineJoin='round'; ctx.lineCap='round';
+  L.edges.forEach((e,i)=>{ ctx.strokeStyle=ED.sel&&ED.sel.edge===i?'#00e5ff':KC[e.kind]||'#fff'; ctx.lineWidth=ED.sel&&ED.sel.edge===i?4:(e.kind==='runway'?1.5:2.2); if(e.kind==='leadin') ctx.setLineDash([]); line(e.pts); ctx.stroke(); });
+  if(s>0.15){ ctx.fillStyle='#ffffffb0'; L.edges.forEach(e=>{ for(let k=1;k<e.pts.length-1;k++){ const q=S(e.pts[k]); ctx.fillRect(q[0]-1.5,q[1]-1.5,3,3); } }); }
+  const u=used();
+  L.nodes.forEach((n,i)=>{ if(!u.has(i)) return; const q=S(P(n)); ctx.beginPath(); ctx.arc(q[0],q[1],n.rp?5:3.2,0,7); ctx.fillStyle=n.rp==='blue'?'#2f8cff':n.rp==='green'?'#57e04a':'#ffffff'; ctx.fill(); });
+  ctx.font='bold 11px ui-monospace,Menlo,monospace';
+  L.stands.forEach(st=>{ const q=S(st.xy); ctx.fillStyle='#ff4fa3'; ctx.beginPath(); ctx.arc(q[0],q[1],5,0,7); ctx.fill(); ctx.fillStyle='#ffd0e6'; ctx.fillText(st.id,q[0]+7,q[1]-5); });
+  L.hps.forEach(h=>{ const q=S(h.xy); ctx.fillStyle='#ff9a1f'; ctx.fillRect(q[0]-5,q[1]-5,10,10); ctx.fillStyle='#ffd3a1'; ctx.fillText(h.id,q[0]+7,q[1]+12); });
+  if(ED.draw){ ctx.strokeStyle='#00e5ff'; ctx.lineWidth=2; ctx.setLineDash([6,4]); line(ED.draw.pts.concat(ED.hover?[ED.hover]:[])); ctx.stroke(); ctx.setLineDash([]); }
+};
+function render(){ const b=$('edUndo'); if(b) b.disabled=!ED.undo.length; }
+// ---------- panel ----------
+const panel=document.createElement('div'); panel.id='edPanel'; panel.hidden=true;
+panel.innerHTML=`<h4>Çizgi Editörü <button id="edClose" title="Kapat">✕</button></h4>
+<div class="tg">
+ <button data-tool="move">✋ Taşı / Seç</button><button data-tool="draw">✏️ Çizgi çiz</button>
+ <button data-tool="stand">🅿 Park pozisyonu</button><button data-tool="hp">⛔ Holding point</button>
+ <button data-tool="green">🟢 Yeşil nokta</button><button data-tool="blue">🔵 Mavi nokta</button>
+ <button data-tool="del">🗑 Sil</button><button id="edUndo">↶ Geri al</button>
+</div>
+<div class="hint" id="edHint"></div>
+<div id="edDrawOpt"><label>Yeni çizginin türü<select id="edKind"><option value="taxiway">Taksi yolu</option><option value="taxilane">Apron taksi hattı</option><option value="leadin">Park girişi</option></select></label>
+<label>Adı (ör. A, B1, APRON 4)<input id="edName" value="A"></label>
+<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="edCurve"> Çizerken kavisli yap (yumuşat)</label></div>
+<div class="row"><label>Park no<input id="edStandId" value="101" size="5"></label><label>Apron<input id="edApron" value="APRON 4" size="8"></label><label>HP adı<input id="edHpId" value="AHP3" size="6"></label></div>
+<div class="sel" id="edSel" hidden><b>Seçili çizgi</b> · <span id="edSLen"></span>
+ <label>Adı<input id="edSName"></label>
+ <label>Türü<select id="edSKind"><option value="taxiway">Taksi yolu</option><option value="taxilane">Apron taksi hattı</option><option value="leadin">Park girişi</option><option value="runway">Pist</option></select></label>
+ <div class="row"><button id="edSmooth">Kavisli yap</button><button id="edStraight">Dümdüz yap</button><button id="edRev">Yönü çevir</button></div></div>
+<div class="row"><button class="pri" id="edSave">💾 Kaydet ve uygula</button></div>
+<div class="row"><button id="edExport">Dışa aktar</button><button id="edImport">İçe aktar</button><button id="edReset">Varsayılana dön</button></div>
+<div id="edIO" hidden><textarea id="edText" spellcheck="false"></textarea><div class="row"><button id="edIOApply">İçe aktar: uygula</button><button id="edIOClose">Kapat</button></div></div>
+<div class="hint" id="edStatus"></div>`;
+document.body.appendChild(panel);
+panel.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
+$('edUndo').onclick=()=>{ if(!ED.undo.length) return; ED.L=JSON.parse(ED.undo.pop()); ED.draw=null; select(null); render(); };
+$('edClose').onclick=()=>toggle(false);
+$('edSName').onchange=()=>{ if(!ED.sel) return; snap(); ED.L.edges[ED.sel.edge].name=$('edSName').value.trim(); };
+$('edSKind').onchange=()=>{ if(!ED.sel) return; snap(); ED.L.edges[ED.sel.edge].kind=$('edSKind').value; };
+$('edSmooth').onclick=()=>{ if(!ED.sel) return; snap(); const e=ED.L.edges[ED.sel.edge]; e.pts=chaikin(e.pts,2); fixStands(); select(ED.sel); };
+$('edStraight').onclick=()=>{ if(!ED.sel) return; snap(); const e=ED.L.edges[ED.sel.edge]; e.pts=[e.pts[0],e.pts[e.pts.length-1]]; fixStands(); select(ED.sel); };
+$('edRev').onclick=()=>{ if(!ED.sel) return; snap(); const e=ED.L.edges[ED.sel.edge]; [e.a,e.b]=[e.b,e.a]; e.pts.reverse(); fixStands(); };
+function status(t){ $('edStatus').textContent=t; }
+function build(){ const L=ED.L, u=used(), map={}, nodes=[];
+  L.nodes.forEach((n,i)=>{ if(!u.has(i)) return; map[i]=nodes.length; const m=Object.assign({},n); m.id=nodes.length; nodes.push(m); });
+  const edges=L.edges.filter(e=>e.a!==e.b||e.pts.length>2).map(e=>({a:map[e.a],b:map[e.b],name:e.name||'TWY',kind:e.kind,len:+plen(e.pts).toFixed(1),pts:e.pts}));
+  const stands=L.stands.map(s=>{ const n=nodes.find(n=>dist(P(n),s.xy)<0.6); const o={id:s.id,apron:s.apron,xy:s.xy,hdg:s.hdg,lead_len:s.lead_len}; if(s.turn360) o.turn360=true; if(s.note) o.note=s.note; return o; });
+  stands.forEach(s=>{ const i=nodes.findIndex(n=>dist(P(n),s.xy)<0.6); if(i<0) return; const e=edges.find(e=>e.a===i||e.b===i); if(!e) return;
+    if(e.a===i){ e.a=e.b; e.b=i; e.pts=e.pts.slice().reverse(); } if(e.kind!=='runway'){ e.kind='leadin'; e.name='STAND '+s.id; }
+    const p=e.pts; let acc=0,k=p.length-1,a=p[k]; while(k>0&&acc<30){ acc+=dist(p[k],p[k-1]); k--; a=p[k]; } s.hdg=+brg(a,p[p.length-1]).toFixed(1); s.lead_len=+plen(p).toFixed(1); });
+  const bad=stands.filter(s=>!nodes.some(n=>dist(P(n),s.xy)<0.6)).map(s=>s.id);
+  return {v:Date.now(),taxi:{nodes,edges,source:'TWR SİM çizgi editörü'},stands,holding_points:L.hps,bad}; }
+$('edSave').onclick=async()=>{ const B=build();
+  if(B.bad.length){ status('Uyarı: şu park pozisyonları bir çizgi ucunda değil: '+B.bad.join(', ')+'. Yine de kaydedildi.'); }
+  delete B.bad; const json=JSON.stringify(B);
+  try{ localStorage.setItem('twrsim.layout',json); }catch(e){ status('Tarayıcı kaydı yapılamadı: '+e.message); return; }
+  let shared=false; try{ const db=window.__layoutDb||(window.claude&&claude.use?await claude.use('db'):null); if(db){ await db.doc('layout/current').set({v:B.v,json,at:new Date().toISOString()}); shared=true; } }catch(e){ status('Paylaşılan kayıt yapılamadı ('+(e.code||e.message)+'). Bu tarayıcıda kaydedildi; diğer ekranlar için Dışa aktar ile Claude\'a gönder.'); }
+  try{ sessionStorage.setItem('twrsim.layoutReload',String(B.v)); }catch(e){}
+  ED.dirty=false; toast(shared?'Kaydedildi: bütün ekranlar (ATC dahil) yeni çizgileri kullanacak.':'Kaydedildi (bu tarayıcıda). Paylaşmak için Dışa aktar.');
+  setTimeout(()=>location.reload(),900); };
+$('edExport').onclick=()=>{ const B=build(); delete B.bad; $('edText').value=JSON.stringify(B); $('edIO').hidden=false; $('edText').select();
+  status('Metni kopyala (Ctrl/Cmd+C) ve Claude\'a yapıştır: sim dosyasına kalıcı olarak gömülür.'); try{ navigator.clipboard&&navigator.clipboard.writeText($('edText').value).then(()=>status('Panoya kopyalandı. Claude\'a yapıştırabilirsin.'),()=>{}); }catch(e){} };
+$('edImport').onclick=()=>{ $('edText').value=''; $('edIO').hidden=false; status('Daha önce dışa aktardığın metni yapıştır, sonra "İçe aktar: uygula".'); };
+$('edIOClose').onclick=()=>{ $('edIO').hidden=true; };
+$('edIOApply').onclick=()=>{ try{ const B=JSON.parse($('edText').value); if(!B.taxi||!B.taxi.nodes) throw new Error('taxi yok'); snap();
+  ED.L={nodes:B.taxi.nodes,edges:B.taxi.edges.map(e=>({a:e.a,b:e.b,name:e.name,kind:e.kind,pts:e.pts})),stands:B.stands||[],hps:B.holding_points||[]}; $('edIO').hidden=true; select(null); status('İçe aktarıldı. Kaydet ve uygula ile kalıcı yap.'); }catch(e){ status('Metin okunamadı: '+e.message); } };
+$('edReset').onclick=async()=>{ if(!$('edReset').dataset.sure){ $('edReset').dataset.sure=1; $('edReset').textContent='Emin misin? Tekrar bas'; setTimeout(()=>{ delete $('edReset').dataset.sure; $('edReset').textContent='Varsayılana dön'; },4000); return; }
+  try{ localStorage.removeItem('twrsim.layout'); }catch(e){} const v=Date.now();
+  try{ const db=window.__layoutDb||(window.claude&&claude.use?await claude.use('db'):null); if(db) await db.doc('layout/current').set({v,reset:true,at:new Date().toISOString()}); }catch(e){}
+  try{ sessionStorage.setItem('twrsim.layoutReload',String(v)); }catch(e){} location.reload(); };
+function toggle(on){ if(on===ED.on) return; if(!on&&ED.dirty){ status('Kaydedilmemiş değişiklik var: Kaydet ya da tekrar ✕ ile çık.'); ED.dirty=false; return; }
+  ED.on=on; panel.hidden=!on; const b=$('mEdit'); if(b) b.classList.toggle('on',on); canvas.style.cursor=on?'crosshair':'';
+  if(on){ begin(); setTool('move'); if(view.s<0.25){ view.s=0.35; } status(window.__layoutVer?'Kaydedilmiş bir düzen kullanılıyor ('+new Date(window.__layoutVer).toLocaleString()+').':'Varsayılan düzen kullanılıyor.'); } }
+// header button
+const hb=document.createElement('button'); hb.className='ib'; hb.id='mEdit'; hb.title='Sarı çizgiler, park pozisyonları, HP ve rota noktaları'; hb.textContent='✎ Çizgi Editörü';
+const anchor=document.getElementById('mDN'); anchor.parentNode.insertBefore(hb,anchor); hb.onclick=()=>toggle(!ED.on);
+addEventListener('keydown',e=>{ if(!ED.on) return; if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  if(e.key==='Enter'&&ED.draw){ finishDraw(null); e.preventDefault(); }
+  else if(e.key==='Escape'){ ED.draw=null; }
+  else if((e.key==='z'||e.key==='Z')&&(e.ctrlKey||e.metaKey)){ $('edUndo').click(); e.preventDefault(); } },true);
+})();
+</script>
+
 </body>
 </html>
