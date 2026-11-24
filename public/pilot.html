@@ -21,7 +21,7 @@
   #top .hint2{font-size:11px;color:var(--muted);white-space:nowrap}
   .menus{display:flex;gap:6px;position:relative}
   .ib{height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap}
-  .ib:hover{background:#1a2e4b} .ib svg{width:16px;height:16px}
+  .ib:hover{background:#1a2e4b} .ib svg{width:16px;height:16px} .ib.on{background:#1f7a3a}
   .drop{position:absolute;top:38px;left:0;z-index:20;background:#0c1729;border:1px solid var(--line2);border-radius:10px;padding:4px;min-width:190px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
   .drop button{display:block;width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px}
   .drop button:hover{background:#18294a}
@@ -63,6 +63,13 @@
   .fms select{font:12px ui-monospace,Menlo,monospace;background:#102131;color:#fff;border:1px solid #3b6178;border-radius:4px;padding:1px}
   .fms .st{margin-top:6px;background:#166534;color:#eaffea;padding:4px 7px;font-weight:700;border-radius:4px}
   .fms .none{color:#9fb6c2;font-size:12px;padding:10px 2px;font-family:inherit}
+  .pat{margin-top:8px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:8px;font-size:12px}
+  .patT{font-size:11px;color:#9fb3c8;margin:2px 0 5px;font-weight:600}
+  .patG{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px}
+  .patR{display:flex;gap:4px;margin-bottom:6px} .patR button{flex:1}
+  .pat button{background:#1e4f8f;border:1px solid #4b6a8f;border-radius:6px;color:#fff;padding:5px 4px;font-size:11px;cursor:pointer;white-space:nowrap}
+  .pat button:hover{border-color:#fff} .pat button.on{background:var(--ok)}
+  #dPat{padding:8px;min-width:220px;font-size:12px} #dPat label{display:flex;align-items:center;gap:6px;padding:2px 0} #dPat select{font:12px system-ui;background:var(--bg);color:#fff;border:1px solid var(--line2);border-radius:6px;padding:3px}
   .vfr{margin-top:8px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:8px;font-size:12px;display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center}
   .vfr select{font:12px system-ui;background:var(--bg);color:#fff;border:1px solid var(--line2);border-radius:6px;padding:4px}
   .vfr button{grid-column:1/-1;background:var(--ok);border:0;border-radius:8px;padding:7px;color:#fff;cursor:pointer;font-weight:600}
@@ -148,6 +155,14 @@
         <button data-open="veh">Add Vehicle</button>
       </div>
       <button class="ib" id="mMeas" title="Mesafe ölçümü (NM)">📏 Mesafe</button>
+      <button class="ib" id="mPat" title="Trafik paterni çizgileri">Patern çizgileri</button>
+      <div class="drop" id="dPat" hidden>
+        <label>Pist <select id="plRwy"></select> <select id="plHand"><option value="L">Sol</option><option value="R">Sağ</option><option value="B">İkisi</option></select></label>
+        <label><input type="checkbox" data-leg="dep" checked> Departure</label><label><input type="checkbox" data-leg="up" checked> Upwind</label>
+        <label><input type="checkbox" data-leg="cw" checked> Crosswind</label><label><input type="checkbox" data-leg="dw" checked> Downwind</label>
+        <label><input type="checkbox" data-leg="base" checked> Base</label><label><input type="checkbox" data-leg="fin" checked> Final</label>
+        <label><input type="checkbox" id="plOn"> <b>Çizgileri göster</b></label>
+      </div>
       <div class="drop" id="dAc" hidden>
         <button data-acm="rep">Reposition Aircraft</button>
         <button data-acm="hdg">Arrange heading</button>
@@ -168,11 +183,12 @@
       <section class="card" id="cardStrips"><h3><span>Uçaklar</span><span class="n" id="nStr">0</span></h3><div id="strips"></div></section>
       <section class="card" id="cardCmd"><h3><span>Komutlar</span><span class="n" id="simT"></span></h3>
         <div class="fms" id="fms"><div class="none">Bir uçak seç (strip veya harita).</div></div>
-        <div class="vfr" id="vfr" hidden>
-          <span>Rwy</span><select id="vRwy"></select>
-          <span>Pos</span><select id="vPos"><option value="downwind">Downwind</option><option value="base">Base leg</option><option value="final">Final</option><option value="touchdown">Touchdown</option></select>
-          <span>Tur</span><select id="vHand"><option value="L">Left hand</option><option value="R">Right hand</option></select>
-          <button id="vGo">VFR katıl</button>
+        <div class="pat" id="pat" hidden>
+          <div class="patT">Trafik paterni (Downwind Join)</div>
+          <div class="patG" id="patJoin"></div>
+          <div class="patR"><button data-pc="base">Turn Base</button><button data-pc="final">Turn Final</button><button data-pc="cbase">Cancel Base Leg</button></div>
+          <div class="patT">Straight-In Approach</div>
+          <div class="patR" id="patSI"></div>
         </div>
         <div id="icons"></div>
         <div id="icname"></div>
@@ -704,6 +720,7 @@ function nav(a,dt){
     case 'enroute': { const d=steerTo(a,a.dct.p); if(d<2000){ a.nav='hold'; a.hold={fix:a.dct.p,inb:a.hdg,ph:0,t:0}; a.status='Hedefte, holding'; renderStrips(); } break; }
     case 'app': approach(a,dt); break;
     case 'circuit': circuit(a,dt); break;
+    case 'straight': straight(a,dt); break;
   }
 }
 function approach(a,dt){
@@ -725,15 +742,57 @@ function approach(a,dt){
     if(along<=60){ if(a.ldg) touchdown(a,R); else goAround(a,'İniş izni yok'); }
   }
 }
-function circuitPts(E,hand){ const R=RW[E], u=R.u, s=hand==='L'?[-u[1],u[0]]:[u[1],-u[0]], W=1.0*NM, B=1.2*NM;
-  const P=(al,off)=>[R.thr[0]+u[0]*al+s[0]*off,R.thr[1]+u[1]*al+s[1]*off];
-  return { dwMid:P(R.len/2,W), dwEnd:P(-B*0.2,W), baseTurn:P(-B,W), final:P(-B,0), final3:P(-3*NM,0), short:P(-1*NM,0) }; }
+// ---------- traffic pattern (APP-01..04) ----------
+// size by weight class: width W, base point B before the threshold, crosswind C past the far end, height h ft AGL
+function patDims(w){ return w==='L'?{W:1.0*NM,B:1.2*NM,C:0.8*NM,h:1000}:w==='M'?{W:1.5*NM,B:2.0*NM,C:1.0*NM,h:1500}:{W:2.0*NM,B:2.5*NM,C:1.2*NM,h:1500}; }
+const patSide=(E,hand)=>{ const u=RW[E].u; return hand==='L'?[-u[1],u[0]]:[u[1],-u[0]]; };
+const patSpd=a=>a.perf.w==='L'?a.perf.vapp+20:Math.min(210,a.perf.vapp+45);
+function patP(E,hand,al,off){ const R=RW[E], sd=patSide(E,hand); return [R.thr[0]+R.u[0]*al+sd[0]*off,R.thr[1]+R.u[1]*al+sd[1]*off]; }
+function patLegs(E,hand,w){ const R=RW[E], D=patDims(w), P=(al,o)=>patP(E,hand,al,o);
+  return { dep:[P(0,0),P(R.len+D.C,0)], up:[P(0,-0.25*NM),P(R.len,-0.25*NM)], cw:[P(R.len+D.C,0),P(R.len+D.C,D.W)],
+    dw:[P(R.len+D.C,D.W),P(-D.B,D.W)], base:[P(-D.B,D.W),P(-D.B,0)], fin:[P(-D.B,0),P(0,0)] }; }
+function flyLine(a,P0,h){ const v=[a.pos[0]-P0[0],a.pos[1]-P0[1]], r=hv(h+90), e=v[0]*r[0]+v[1]*r[1]; a.tgt.hdg=norm360(h-clamp(e*0.04,-35,35)); return e; }
+const turnLead=a=>{ const v=(a.gs||a.ias)*KT, w=(a.perf.rate||3)*D2R; return v/w; };
+function joinPattern(a,E,hand){
+  if(!a||a.kind!=='ac'||!a.air){ toast('Havadaki bir uçak seç.'); return; }
+  a.rwy=E; a.app=null; a.ldg=false; a.nav='circuit'; a.cir={end:E,hand,leg:'join',baseReq:false,finalReq:false};
+  a.tgt.spd=patSpd(a); a.status=`${E} ${hand==='L'?'Downwind':'Right-Hand Downwind'} (katılıyor)`; renderStrips(); renderFMS(); }
 function circuit(a,dt){
-  const C=a.cir, R=RW[C.end], pts=circuitPts(C.end,C.hand), cAlt=R.elev+1000;
-  if(C.leg==='join'){ a.tgt.alt=Math.max(cAlt,a.tgt.alt>cAlt+1500?cAlt+500:cAlt); if(steerTo(a,C.joinPt)<700){ C.leg=C.next; a.status=({downwind:'Downwind',base:'Base leg',final:'Final'})[C.leg]+' '+C.end; renderStrips(); } return; }
-  if(C.leg==='downwind'){ a.tgt.alt=cAlt; a.tgt.spd=Math.min(a.tgt.spd||100,a.perf.w==='L'?95:200);
-    const d=steerTo(a,pts.baseTurn); if(d<500){ C.leg='base'; a.status='Base leg '+C.end; renderStrips(); } return; }
-  if(C.leg==='base'){ a.tgt.alt=cAlt-300; const d=steerTo(a,pts.final); if(d<450){ C.leg='final'; a.nav='app'; a.app={end:C.end,est:true,visual:true,ph:'int',fd:0}; a.status='Final '+C.end; renderStrips(); } }
+  const C=a.cir, R=RW[C.end], D=patDims(a.perf.w), u=R.u, sd=patSide(C.end,C.hand), cAlt=R.elev+D.h;
+  const v=[a.pos[0]-R.thr[0],a.pos[1]-R.thr[1]], al=v[0]*u[0]+v[1]*u[1], off=v[0]*sd[0]+v[1]*sd[1];
+  const dwH=norm360(R.qfu+180), baseH=norm360(R.qfu+(C.hand==='L'?90:-90)), dir=C.hand==='L'?-1:1;
+  const leg=n=>{ C.leg=n; a.status=({downwind:'Downwind',baseturn:'Base dönüşü',base:'Base leg'})[n]+' '+C.end+(n==='downwind'&&C.baseReq?' · turn base':''); renderStrips(); renderFMS(); };
+  if(C.leg==='join'){ a.tgt.alt=cAlt; a.tgt.spd=patSpd(a);
+    const jp=patP(C.end,C.hand,clamp(al,-D.B*0.3,R.len*0.6),D.W); if(steerTo(a,jp)<900||(Math.abs(off-D.W)<500&&Math.abs(norm180(a.hdg-dwH))<45)) leg('downwind'); return; }
+  if(C.leg==='downwind'){ a.tgt.alt=cAlt; a.tgt.spd=patSpd(a); flyLine(a,patP(C.end,C.hand,0,D.W),dwH);
+    if(C.baseReq&&al<=-D.B+turnLead(a)) leg('baseturn'); return; }
+  if(C.leg==='baseturn'){ a.tgt.alt=cAlt-300; a.tgt.spd=a.perf.vapp+10; a.tgt.hdg=baseH; a.forceTurn=dir;
+    if(Math.abs(norm180(a.hdg-baseH))<8){ a.forceTurn=0; C.baseAl=al; leg('base'); } return; }
+  if(C.leg==='base'){ a.tgt.alt=cAlt-300; a.tgt.spd=a.perf.vapp+10; flyLine(a,patP(C.end,C.hand,C.baseAl,0),baseH);
+    if(C.finalReq&&off<=turnLead(a)){ a.nav='app'; a.app={end:C.end,est:false,visual:true,ph:'turn',fd:0,fromPat:true}; a.status='Final '+C.end+(a.ldg?' · iniş izni':''); renderStrips(); renderFMS(); } }
+}
+function patCmd(k){ const a=SEL; if(!a||a.kind!=='ac'||!a.air){ toast('Havadaki bir uçak seç.'); return; }
+  const C=a.nav==='circuit'?a.cir:null;
+  if(k==='base'){ if(!C||C.leg==='join'){ toast('Turn Base: uçak önce downwind hattına katılmalı.'); return; }
+    if(C.leg!=='downwind'){ toast('Uçak zaten base/final aşamasında.'); return; } if(C.baseReq){ toast('Turn Base zaten verildi.'); return; }
+    C.baseReq=true; a.status=`Downwind ${C.end} · turn base`; }
+  if(k==='cbase'){ const turned=(C&&['baseturn','base'].includes(C.leg))||(a.nav==='app'&&a.app&&a.app.fromPat);
+    if(turned){ toast('Unable to cancel base leg. Aircraft has already initiated the base turn.',4000); return; }
+    if(!C||!C.baseReq){ toast('İptal edilecek bir Turn Base talimatı yok.'); return; }
+    C.baseReq=false; a.status=`Downwind ${C.end} (base iptal, downwind devam)`; }
+  if(k==='final'){ if(!C||C.leg==='join'||C.leg==='downwind'){ toast('Turn Final için önce Turn Base verilmeli ve base dönüşü tamamlanmalı.'); return; }
+    if(C.leg==='baseturn'){ toast('Base dönüşü tamamlanmadan Turn Final verilemez.'); return; }
+    if(C.finalReq){ toast('Turn Final zaten verildi.'); return; } C.finalReq=true; a.status=`Base ${C.end} · turn final`; }
+  renderStrips(); renderFMS(); }
+// ---------- straight-in (APP-06): 10 NM point on the centreline, then 5 NM, then final ----------
+function straightIn(a,E){ if(!a||a.kind!=='ac'||!a.air){ toast('Havadaki bir uçak seç.'); return; }
+  a.rwy=E; a.app=null; a.ldg=false; a.nav='straight'; a.si={end:E,ph:'to10'}; a.status='Straight-in '+E+' · 10 NM noktasına'; renderStrips(); renderFMS(); }
+function straight(a,dt){ const S_=a.si, {R,along,xt}=rwyFrame(a,S_.end), hd=Math.abs(norm180(a.hdg-R.qfu));
+  if(S_.ph==='to10'){ a.tgt.alt=R.elev+3000; a.tgt.spd=Math.min(a.tgt.spd||210,a.perf.w==='L'?a.perf.vapp+30:210);
+    if(along>4.5*NM&&along<10.5*NM&&Math.abs(xt)<400&&hd<30){ S_.ph='to5'; a.status='Straight-in '+S_.end+' · hizalandı, 5 NM noktasına'; renderStrips(); renderFMS(); return; }
+    const P10=[R.thr[0]-R.u[0]*10*NM,R.thr[1]-R.u[1]*10*NM]; if(steerTo(a,P10)<turnLead(a)+300){ S_.ph='to5'; a.status='Straight-in '+S_.end+' · 10 NM, 5 NM noktasına'; renderStrips(); renderFMS(); } return; }
+  if(S_.ph==='to5'){ a.tgt.alt=R.elev+1600; a.tgt.spd=a.perf.vapp+20; a.tgt.hdg=norm360(R.qfu-clamp(xt/25,-30,30));
+    if(along<=5*NM){ a.nav='app'; a.app={end:S_.end,est:true,visual:false,ph:'int',fd:0,si:true}; a.status='Straight-in final '+S_.end+(a.ldg?' · iniş izni':''); renderStrips(); renderFMS(); } }
 }
 function touchdown(a,R){ a.air=false; a.alt=R.elev; a.vs=0; a.nav='hdg'; a.mode='rollout'; a.hdg=R.qfu; a.rollEnd=R.end; a.status='İndi '+R.end; a.ldg=false; renderStrips(); toast(`${a.cs} ${R.end} pistine indi`); }
 function goAround(a,why){ const R=RW[a.app?a.app.end:a.rwy]; a.nav='hdg'; a.tgt.hdg=R?R.qfu:a.hdg; a.tgt.alt=Math.max(a.alt+1000,ELEV+3000); a.tgt.spd=Math.max(a.ias,a.perf.vapp+25); a.app=null; a.ldg=false;
@@ -853,7 +912,7 @@ function cmd(k){
       a.nav='app'; a.app={end:a.rwy,est:false,visual:k==='visual',ph:direct||(k==='visual'&&along>1.5*NM)?'int':'pos',fd:(k==='visual'?5:12)*NM};
       a.status=(k==='visual'?'Görerek yaklaşma ':'ILS ')+a.rwy; break; }
     case 'landing': { if(!a.air){ toast('Uçak havada değil.'); return; }
-      if(a.nav!=='app'&&a.nav!=='circuit'){ toast('Önce yaklaşma (APPROACH, görerek ya da VFR tur) ver.'); return; }
+      if(a.nav!=='app'&&a.nav!=='circuit'&&a.nav!=='straight'){ toast('Önce yaklaşma (APPROACH, görerek ya da VFR tur) ver.'); return; }
       a.ldg=true; a.status+=' · iniş izni'; break; }
     case 'orbit': { if(!a.air){ toast('Uçak havada değil.'); return; } a.nav='orbit'; a.orbit={dir:1,left:360,h0:a.hdg}; a.status='Orbit (sağ 360)'; break; }
     case 'goaround': { if(!a.air){ toast('Uçak havada değil.'); return; } goAround(a,''); return; }
@@ -861,15 +920,6 @@ function cmd(k){
   }
   renderStrips(); renderFMS();
 }
-function joinVFR(){
-  const a=SEL; if(!a||a.kind!=='ac'||!a.air){ toast('Havadaki bir uçak seç.'); return; }
-  const E=document.getElementById('vRwy').value, pos=document.getElementById('vPos').value, hand=document.getElementById('vHand').value;
-  const pts=circuitPts(E,hand); a.rwy=E;
-  if(pos==='final'||pos==='touchdown'){ a.nav='app'; a.app={end:E,est:false,visual:true,ph:'pos',fd:3*NM}; if(pos==='touchdown') a.ldg=true; a.status=`Final ${E}${pos==='touchdown'?' · iniş':''}`; }
-  else { a.nav='circuit'; a.cir={end:E,hand,leg:'join',next:pos,joinPt:pos==='downwind'?pts.dwMid:pts.baseTurn}; a.status=`${hand==='L'?'Left':'Right'} hand ${pos} ${E}`; }
-  renderStrips(); renderFMS();
-}
-
 // ======================================================================
 //  map interaction modes (route picking, teleport, add-position)
 // ======================================================================
@@ -1029,6 +1079,11 @@ function draw(){
     // extended centrelines
     ctx.strokeStyle='rgba(255,255,255,.25)'; ctx.setLineDash([4,8]); ctx.lineWidth=1;
     for(const E of ENDS){ const R=RW[E]; line([R.thr,[R.thr[0]-R.u[0]*12*NM,R.thr[1]-R.u[1]*12*NM]]); ctx.stroke(); } ctx.setLineDash([]);
+    // traffic pattern lines (APP-04)
+    if(PATV.on){ const w=SEL&&SEL.kind==='ac'?SEL.perf.w:'M', col={dep:'#7fd1ff',up:'#b0b8c4',cw:'#ffd24a',dw:'#4ade80',base:'#f59e0b',fin:'#f472b6'}, nm={dep:'Departure',up:'Upwind',cw:'Crosswind',dw:'Downwind',base:'Base',fin:'Final'};
+      for(const h of (PATV.hand==='B'?['L','R']:[PATV.hand])){ const L=patLegs(PATV.end,h,w);
+        for(const k in L){ if(!PATV.legs[k]) continue; ctx.strokeStyle=col[k]; ctx.lineWidth=2; ctx.setLineDash(k==='up'?[6,6]:[]); line(L[k]); ctx.stroke(); ctx.setLineDash([]);
+          const m=S([(L[k][0][0]+L[k][1][0])/2,(L[k][0][1]+L[k][1][1])/2]); ctx.font='11px system-ui'; ctx.fillStyle=col[k]; ctx.fillText(nm[k],m[0]+4,m[1]-4); } } }
     // taxi centrelines
     if(s>0.08){ ctx.strokeStyle='rgba(241,193,43,.75)'; ctx.lineWidth=1; EDGES.forEach(e=>{ if(e.kind==='runway') return; line(e.pts); ctx.stroke(); }); }
     // runway labels
@@ -1120,7 +1175,7 @@ function renderStrips(){
 function select(a){ SEL=a||null; renderStrips(); renderFMS(); }
 function renderFMS(){
   const el=document.getElementById('fms'), a=SEL;
-  document.getElementById('vfr').hidden=!(a&&a.kind==='ac'&&a.rules==='V');
+  document.getElementById('pat').hidden=!(a&&a.kind==='ac'&&a.air);
   if(!a){ el.innerHTML='<div class="none">Bir uçak seç (strip veya harita).</div>'; document.getElementById('xCode').textContent='----'; return; }
   if(a.kind==='veh'){ el.innerHTML=`<div class="r1"><span class="box">${a.type}</span></div><div class="cs">${a.cs}</div><div class="st">${a.status}</div>`; document.getElementById('xCode').textContent='----'; return; }
   el.innerHTML=`<div class="r1"><span class="box">${a.type}</span><span class="box tg ${a.rules==='I'?'on':''}" data-r="I">I</span><span class="box tg ${a.rules==='V'?'on':''}" data-r="V">V</span><span class="box">${a.perf.w}</span><span class="box" style="margin-left:auto">${a.air?'AIR':'GND'}</span></div>
@@ -1197,7 +1252,7 @@ function drawPFD(){
 const $=id=>document.getElementById(id);
 $('mMain').onclick=e=>{ e.stopPropagation(); $('dMain').hidden=!$('dMain').hidden; $('dAc').hidden=true; };
 $('mAc').onclick=e=>{ e.stopPropagation(); $('dAc').hidden=!$('dAc').hidden; $('dMain').hidden=true; };
-addEventListener('click',()=>{ $('dMain').hidden=true; $('dAc').hidden=true; });
+addEventListener('click',()=>{ $('dMain').hidden=true; $('dAc').hidden=true; $('dPat').hidden=true; });
 document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openAdd(b.dataset.open));
 function openAdd(which){
   if(which==='air'){ openAdd('add'); $('aLoc').value='dir'; locUI(); return; }
@@ -1299,7 +1354,16 @@ $('acmGo').onclick=()=>{ if(acmKind==='cross'){ const a=SEL; if(!a||!a._crossSel
   $('dlgAcm').hidden=true; renderStrips(); renderFMS(); };
 // directional turn (heading with left/right)
 const _nav=nav; nav=function(a,dt){ if(a.nav==='hdgdir'){ a.glide=null; a.forceTurn=0; if(Math.abs(norm180(a.tgt.hdg-a.hdg))>5) a.forceTurn=a.turnDir; else a.nav='hdg'; return; } _nav(a,dt); };
-$('vRwy').innerHTML=ENDS.map(e=>`<option>${e}</option>`).join(''); $('vGo').onclick=joinVFR;
+{ const J=$('patJoin'); ['21L','21R','03R','03L'].forEach(E=>{ for(const h of ['L','R']){ const b=document.createElement('button'); b.textContent=h==='L'?E+' Downwind':E+' Right-Hand Downwind'; b.onclick=()=>joinPattern(SEL,E,h); J.appendChild(b); } });
+  const SI=$('patSI'); ['03L','03R','21L','21R'].forEach(E=>{ const b=document.createElement('button'); b.textContent=E; b.title='Straight-In '+E; b.onclick=()=>straightIn(SEL,E); SI.appendChild(b); });
+  document.querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>patCmd(b.dataset.pc)); }
+// pattern lines on the map (APP-04)
+const PATV={on:false,end:null,hand:'L',legs:{dep:1,up:1,cw:1,dw:1,base:1,fin:1}};
+$('plRwy').innerHTML=ENDS.map(e=>`<option>${e}</option>`).join(''); $('plRwy').value=activeRwy;
+$('mPat').onclick=e=>{ e.stopPropagation(); $('dPat').hidden=!$('dPat').hidden; };
+$('dPat').onclick=e=>e.stopPropagation();
+const plSync=()=>{ PATV.on=$('plOn').checked; PATV.end=$('plRwy').value; PATV.hand=$('plHand').value; document.querySelectorAll('[data-leg]').forEach(c=>PATV.legs[c.dataset.leg]=c.checked); $('mPat').classList.toggle('on',PATV.on); };
+$('dPat').querySelectorAll('input,select').forEach(i=>i.onchange=plSync);
 addEventListener('keydown',e=>{ if(e.key==='Escape'){ setMode(null); document.querySelectorAll('.veil').forEach(v=>v.hidden=true); } });
 
 // ======================================================================
@@ -1387,7 +1451,7 @@ let toastT=0; function toast(m){ const t=$('toast'); t.textContent=m; t.style.op
 // boot
 resize(); buildWxInputs(); for(let i=0;i<5;i++) WX.tick(1); renderAWOS(); renderStrips(); renderFMS();
 requestAnimationFrame(draw); requestAnimationFrame(drawPFD);
-window.__sim={toScreen:p=>S(p),TR,RW,NODES,EDGES,STANDS,addAircraft,addVehicle,cmd,select,setMode,rebuildRoute,commitRoute,simStep,view,WX,joinVFR,dijkstra,nearestNode,RWP,rwyX,rwyGates,onRwy,openCross,get MODE(){return MODE;}};
+window.__sim={toScreen:p=>S(p),TR,RW,NODES,EDGES,STANDS,addAircraft,addVehicle,cmd,select,setMode,rebuildRoute,commitRoute,simStep,view,WX,joinPattern,patCmd,straightIn,PATV,patLegs,dijkstra,nearestNode,RWP,rwyX,rwyGates,onRwy,openCross,get MODE(){return MODE;}};
 </script>
 </body>
 </html>
