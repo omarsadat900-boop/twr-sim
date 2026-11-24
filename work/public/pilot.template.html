@@ -1093,9 +1093,9 @@ function draw(){
     // route points: only while picking a taxi route
     if(EDON) EDH.drawOverlay();
     else if(s>0.12&&MODE&&MODE.k==='route'){
-      NODES.forEach(n=>{ if(ADJ[n.id].length&&ADJ[n.id].every(x=>EDGES[x.e].kind==='runway')) return; const q=S([n.x,n.y]);
+      NODES.forEach(n=>{ if(!n.rp&&ADJ[n.id].length&&ADJ[n.id].every(x=>EDGES[x.e].kind==='runway')) return; const q=S([n.x,n.y]);
         if(n.hp){ ctx.fillStyle='#ff9a1f'; ctx.beginPath(); ctx.arc(q[0],q[1],4.5,0,7); ctx.fill(); }
-        else if(n.rp==='blue'){ ctx.fillStyle='#2f8cff'; ctx.beginPath(); ctx.arc(q[0],q[1],4.2,0,7); ctx.fill(); }
+        else if(n.rp==='blue'||n.rp==='rwy'){ ctx.fillStyle='#2f8cff'; ctx.beginPath(); ctx.arc(q[0],q[1],4.2,0,7); ctx.fill(); }
         else if(n.stand){ ctx.fillStyle='#ff4fa3'; ctx.beginPath(); ctx.arc(q[0],q[1],3.2,0,7); ctx.fill(); }
         else { ctx.fillStyle='#57e04a'; ctx.beginPath(); ctx.arc(q[0],q[1],3.8,0,7); ctx.fill(); } });
     }
