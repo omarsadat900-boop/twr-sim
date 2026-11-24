@@ -192,10 +192,10 @@
           <div class="patG" id="patJoin"></div>
           <div class="patR"><button data-pc="base">Turn Base</button><button data-pc="final">Turn Final</button><button data-pc="cbase">Cancel Base Leg</button></div>
           <div id="gaMenu" hidden>
-            <div class="patT" style="color:#ffb547">After Go-Around</div>
+            <div class="patT" id="gaT">Uçuş kontrolü</div>
             <div class="patR"><input id="gaHdg" type="number" min="1" max="360" placeholder="HDG" class="gaIn"><button data-ga="L">Turn Left</button><button data-ga="R">Turn Right</button><button data-ga="H">Heading</button></div>
             <div class="patR"><input id="gaSpd" type="number" placeholder="IAS kt" class="gaIn"><button data-ga="S">Hız</button><input id="gaAlt" type="number" step="100" placeholder="ALT ft" class="gaIn"><button data-ga="A">İrtifa</button></div>
-            <div class="patR"><select id="gaRwy" class="gaIn"></select><button data-ga="DL">Left Downwind</button><button data-ga="DR">Right Downwind</button></div>
+            <div class="patR" id="gaRe"><select id="gaRwy" class="gaIn"></select><button data-ga="DL">Left Downwind</button><button data-ga="DR">Right Downwind</button></div>
           </div>
           <div class="patT">Straight-In Approach</div>
           <div class="patR" id="patSI"></div>
@@ -1027,7 +1027,7 @@ function renderStrips(){
 function select(a){ SEL=a||null; renderStrips(); renderFMS(); }
 function renderFMS(){
   const el=document.getElementById('fms'), a=SEL;
-  document.getElementById('pat').hidden=!(a&&a.kind==='ac'&&a.air); document.getElementById('gaMenu').hidden=!(a&&a.kind==='ac'&&a.air&&a.ga);
+  document.getElementById('pat').hidden=!(a&&a.kind==='ac'&&a.air); document.getElementById('gaMenu').hidden=!(a&&a.kind==='ac'&&a.air); { const ga=!!(a&&a.ga); const T=document.getElementById('gaT'); T.textContent=ga?'After Go-Around':'Uçuş kontrolü (IAS / ALT / HDG)'; T.style.color=ga?'#ffb547':''; document.getElementById('gaRe').hidden=!ga; }
   if(a&&a.ga){ const g=document.getElementById('gaRwy'); if(!g.dataset.for||g.dataset.for!==a.id){ g.value=a.rwy; g.dataset.for=a.id; } }
   if(!a){ el.innerHTML='<div class="none">Bir uçak seç (strip veya harita).</div>'; document.getElementById('xCode').textContent='----'; return; }
   if(a.kind==='veh'){ el.innerHTML=`<div class="r1"><span class="box">${a.type}</span></div><div class="cs">${a.cs}</div><div class="st">${a.status}</div>`; document.getElementById('xCode').textContent='----'; return; }
@@ -1092,9 +1092,11 @@ function drawPFD(){
     for(let k=-4;k<=4;k++){ const v=Math.round(val/step)*step+k*step, y=cy-(v-val)/step*18; if(y<14||y>h-44||v<0) continue; pc.fillText(String(v),x+4,y+3); }
     pc.fillStyle='#000'; pc.fillRect(x,cy-9,50,18); pc.strokeStyle='#fff'; pc.strokeRect(x,cy-9,50,18); pc.fillStyle='#7dff6a'; pc.font='bold 12px monospace'; pc.fillText(lab,x+4,cy+4); };
   tape(4,a?a.ias:0,10,String(Math.round(a?a.ias:0))); tape(w-54,a?a.alt:ELEV,100,String(Math.round(a?a.alt:ELEV)));
+  if(a&&a.air&&a.tgt){ pc.font='bold 11px monospace'; pc.fillStyle='#ff6ad5'; pc.fillText(String(Math.round(a.tgt.spd)),8,22); pc.fillText(String(Math.round(a.tgt.alt)),w-50,22); }
   // heading
   pc.fillStyle='#111'; pc.fillRect(56,h-38,w-112,30); pc.fillStyle='#fff'; pc.font='bold 14px monospace'; pc.textAlign='center';
-  pc.fillText('HDG '+pad3(a?a.hdg:0)+(a?'  GS '+Math.round(a.gs||a.ias||0):''),cx,h-18); pc.textAlign='left';
+  pc.fillText('HDG '+pad3(a?a.hdg:0)+(a?'  GS '+Math.round(a.gs||a.ias||0):''),cx,h-18);
+  if(a&&a.air&&a.tgt){ pc.font='bold 10px monospace'; pc.fillStyle='#ff6ad5'; pc.fillText('SEL HDG '+pad3(a.tgt.hdg)+'  IAS '+Math.round(a.tgt.spd)+'  ALT '+Math.round(a.tgt.alt),cx,h-42); } pc.textAlign='left';
   pc.fillStyle='#9fb6c2'; pc.font='10px monospace'; pc.fillText(a?`VS ${Math.round(a.vs||0)}`:'',w-54,h-10);
   if(a){ const k=a.gearK??1, fixed=!a.perf.gear; pc.font='bold 10px monospace'; pc.fillStyle=fixed?'#9fb6c2':k>=1?'#4ade80':k<=0?'#d0d7de':'#ffb547';
     pc.fillText(fixed?'GEAR FIX':k>=1?'GEAR DN':k<=0?'GEAR UP':'GEAR ↕',4,h-10); }
