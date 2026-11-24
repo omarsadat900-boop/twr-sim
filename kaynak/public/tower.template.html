@@ -432,13 +432,16 @@ function acLights(o){ const L=o.g.userData.lights||{}, out={};
     sp.position.set(L[k][0],L[k][1],L[k][2]); sp.renderOrder=6; o.g.add(sp); out[k]=sp; }
   const sp=o.g.userData.spec||{}, pool=new THREE.Mesh(POOL,new THREE.MeshBasicMaterial({map:GLOW,color:'#fff1d0',transparent:true,opacity:0.45,blending:THREE.AdditiveBlending,depthWrite:false}));
   const len=sp.L||30; pool.scale.setScalar(Math.max(8,len*0.45)); pool.position.set(0,0.3,(L.landing?L.landing[2]:-len/2)-Math.max(12,len*0.7)); o.g.add(pool); out.pool=pool; return out; }
-function setAcLights(o,m,t,night,air){ const X=o.lt; if(!X) return; const sz=night?1:0.6;
-  const on=(k,v,s)=>{ if(!X[k]) return; X[k].visible=!!v; X[k].scale.setScalar(s*sz); };
-  const bc=t%1.1, sb=t%1.2;
-  on('navL',m&4,0.008); on('navR',m&4,0.008); on('tail',m&4,0.007);
-  on('beaconTop',(m&8)&&bc<0.16,0.011); on('beaconBot',(m&8)&&bc>0.55&&bc<0.71,0.011);
-  const strobe=(m&16)&&(sb<0.05||(sb>0.14&&sb<0.19)); on('strobeL',strobe,0.016); on('strobeR',strobe,0.016);
-  on('landing',m&2,air?0.02:0.014); on('taxi',(m&1)&&!(m&2),0.011);
+function setAcLights(o,m,t,night,air){ const X=o.lt; if(!X) return; const sz=(night?0.6:0.35)/Math.max(1,o.g.scale.x);
+  // where the tower sees the aircraft from (local frame: nose is -z): lights only show in their real beam sectors
+  const lp=o.g.worldToLocal(camera.position.clone()), hl=Math.hypot(lp.x,lp.z)||1, fw=-lp.z/hl;   // fw 1 = seen from the front, -1 = from behind
+  const side=k=>X[k]&&Math.sign(lp.x)===Math.sign(X[k].position.x)&&fw>-0.34;   // nav lights: own side, 0..110° from the nose
+  const on=(k,v,s)=>{ if(!X[k]) return; X[k].visible=!!v&&s>0; X[k].scale.setScalar(Math.max(0,s)*sz); };
+  const bc=t%1.1, sb=t%1.2, beam=Math.max(0,fw-0.2)/0.8;   // landing/taxi lights point forward: nothing from the side or behind
+  on('navL',(m&4)&&side('navL'),0.008); on('navR',(m&4)&&side('navR'),0.008); on('tail',(m&4)&&fw<-0.34,0.007);
+  on('beaconTop',(m&8)&&bc<0.16,0.01); on('beaconBot',(m&8)&&bc>0.55&&bc<0.71,0.01);
+  const strobe=(m&16)&&(sb<0.05||(sb>0.14&&sb<0.19)); on('strobeL',strobe,0.013); on('strobeR',strobe,0.013);
+  on('landing',m&2,(air?0.016:0.012)*beam*beam); on('taxi',(m&1)&&!(m&2),0.009*beam*beam);
   X.pool.visible=night&&!air&&!!(m&3); }
 
 const st={ hdg:START.hdg, pitch:START.pitch, zoom:1 };
@@ -498,7 +501,7 @@ function frame(t){ const dt=Math.min(0.1,(t-last)/1000); last=t;
   const hd=pad3(st.hdg);
   statusEl.textContent=`BAKIŞ ${hd}° · ZOOM ${st.zoom.toFixed(1)}× · KULE ${SET.h} m`; navDeg.textContent=hd+'°';
   trafficFrame(t); pbbFrame(dt); weatherFrame(dt,t); renderer.render(scene,camera); requestAnimationFrame(frame); }
-window.__tower={st,SET,lookAtEnds,PBB:()=>PBBS};
+window.__tower={st,SET,lookAtEnds,PBB:()=>PBBS,camera,get objs(){ return objs; }};
 
 // ---------- traffic from the pilot screens ----------
 const acMat=new THREE.MeshLambertMaterial({color:'#f4f5f7'}), acDark=new THREE.MeshLambertMaterial({color:'#2b3846'}), vehMat=new THREE.MeshLambertMaterial({color:'#f2c230'});
@@ -513,7 +516,7 @@ function makeAircraft(small){
   return g; }
 function makeVehicle(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.4,2.4,6),vehMat); m.position.y=1.2; const g=new THREE.Group(); g.add(m); return g; }
 const objs=new Map(); window.__objs=objs;
-const TRAFFIC_SCALE=1.2, MINPX=40, VEHLEN={'Fire truck':12,'Police':4.6,'Ambulance':6.5,'Follow-me':5.2,'Passenger bus':13.8,'Catering truck':9};
+const TRAFFIC_SCALE=1.2, VEH_SCALE=2.2, BUS_SCALE=2.6, VEHLEN={'Fire truck':12,'Police':4.6,'Ambulance':6.5,'Follow-me':5.2,'Passenger bus':13.8,'Catering truck':9};
 let lastTF=0;
 function trafficFrame(now){
   const T=window.__traffic||{}, seen=new Set(), dt=Math.min(0.2,lastTF?(now-lastTF)/1000:0.016); lastTF=now;
@@ -535,11 +538,12 @@ function trafficFrame(now){
     if(a.crash&&!o.fire){ o.fire=MODELS.fire(a.kind==='veh'?0.5:Math.max(0.6,Math.min(2.2,((MODELS.SPEC[a.type]||{}).L||30)/30))); scene.add(o.fire); }
     if(o.fire){ if(!a.crash){ scene.remove(o.fire); o.fire=null; } else { o.fire.position.set(o.r[0],h,-o.r[1]); MODELS.animateFire(o.fire,now/1000); } }
     o.kind=a.kind; if(o.lt) setAcLights(o,a.lt||0,now/1000,NIGHT_ON,!!a.air);
-    o.g.position.set(o.r[0],h,-o.r[1]); o.g.rotation.y=-o.rh*Math.PI/180;
-    // visibility from the tower: draw traffic a bit larger, and far traffic never smaller than ~MINPX pixels long
-    { const Lm=a.kind==='veh'?((VEHLEN[a.type])||7):(((MODELS.SPEC[a.type]||{}).L)||30), d=Math.max(1,camera.position.distanceTo(o.g.position));
-      const ppm=(canvas.clientHeight/2)/Math.tan(camera.fov*Math.PI/360)/d, sc=Math.min(10,Math.max(TRAFFIC_SCALE,MINPX/(Lm*ppm)));
-      o.g.scale.setScalar(sc); }
+    // pitch: nose up about the main gear on the ground (rotation / flare), about the centre in the air
+    o.rp=(o.rp||0)+(((a.pt||0)-(o.rp||0)))*k; const pr=o.rp*Math.PI/180, SP=o.g.userData.spec, zm=SP&&SP.gear?SP.gear.main-SP.L/2:0;
+    o.g.rotation.order='YXZ'; o.g.position.set(o.r[0],h+(h<3&&a.kind==='ac'?Math.max(0,zm*Math.sin(pr))*TRAFFIC_SCALE:0),-o.r[1]); o.g.rotation.y=-o.rh*Math.PI/180; o.g.rotation.x=a.kind==='ac'?pr:0;
+    // traffic is drawn a fixed 20% larger; zooming in or out does not change its size
+    const gs=a.kind==='veh'?(a.type==='Passenger bus'?BUS_SCALE:VEH_SCALE):TRAFFIC_SCALE; o.g.scale.setScalar(gs);
+    if(a.kind==='veh') for(const f of (o.g.userData.flashers||[])) if(f.sp){ const k=0.04/gs/Math.sqrt(st.zoom); f.sp.scale.set(k,k,1); }
   }
   objs.forEach((o,id)=>{ if(!seen.has(id)){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); objs.delete(id); } });
 }

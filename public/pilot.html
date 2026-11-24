@@ -659,7 +659,7 @@ function rwyGates(P){ const gates=[], end=P.cum.at(-1);
         gates.push({s:gs,rwy:id,hp}); }
       prev=inn; if(sp>=end) break; } }
   return gates.sort((x,y)=>x.s-y.s); }
-const TAXIMAX=a=>a.kind==='veh'?40:30, taxiDef=a=>a.kind==='veh'?20:15;
+const TAXIMAX=a=>a.kind==='veh'?200:30, taxiDef=a=>a.kind==='veh'?20:15;
 function startPath(a,pts,o){
   if(pts.length<2) return;
   if(o.mode==='taxi'&&a.taxiSpd&&o.spd>=10) o={...o,spd:a.taxiSpd};
@@ -676,7 +676,7 @@ function pathPos(P,s){ let i=1; while(i<P.cum.length-1&&P.cum[i]<s) i++; const a
 function stepPath(a,dt){
   const P=a.path, rem=P.cum[P.cum.length-1]-P.s;
   // look ahead for turns to slow down
-  const [,h1]=pathPos(P,Math.min(P.s+1,P.cum.at(-1))), [,h2]=pathPos(P,Math.min(P.s+60,P.cum.at(-1)));
+  const [,h1]=pathPos(P,Math.min(P.s+1,P.cum.at(-1))), [,h2]=pathPos(P,Math.min(P.s+(a.kind==='veh'?Math.max(60,a.ias*KT*6):60),P.cum.at(-1)));
   const turn=Math.abs(norm180(h2-h1));
   let tgt=P.spd; if(turn>35) tgt=Math.min(tgt,P.back?P.spd:10);
   if(a.kind==='veh'){ const [,hNow]=pathPos(P,Math.min(P.s+8,P.cum.at(-1))); if(!P.back&&Math.abs(norm180(hNow-a.hdg))>50) tgt=Math.min(tgt,1.5); } tgt=Math.min(tgt,Math.sqrt(2*1.2*Math.max(0,rem))/KT+1);
@@ -686,7 +686,7 @@ function stepPath(a,dt){
   if(g){ if(a.clr.cross[0]===g.rwy&&g.s-P.s<500){ g.ok=true; a.clr.cross.shift(); a.hs=null; releaseStopBar(g.hp,a); a.status=a.prevTaxiStatus=`RWY ${xLbl(a,g.rwy)} geçiyor`+(a.clr.cross.length?`, sonra RWY ${a.clr.cross.map(id=>xLbl(a,id)).join(', ')}`:''); renderStrips(); renderFMS(); }
     else { stopS=g.s-(a.kind==='ac'?2:len(a)/2); const room=stopS-P.s; tgt=Math.min(tgt,room<=0.5?0:Math.sqrt(2*1.0*room)/KT);
       if(room<3&&a.ias<0.5&&a.hs!==g){ a.hs=g; a.status=`${g.hp?g.hp+' · ':''}RWY ${rwLabel(g.rwy)} önünde bekliyor`; renderStrips(); renderFMS(); toast(`${a.cs} RWY ${rwLabel(g.rwy)} önünde durdu (izin gerekli)`); } } }
-  a.ias+=clamp(tgt-a.ias,-(G===0||a.blocked?4:2)*dt,1.5*dt); if(a.ias<0) a.ias=0;
+  a.ias+=clamp(tgt-a.ias,-(a.kind==='veh'?8:(G===0||a.blocked?4:2))*dt,(a.kind==='veh'?4:1.5)*dt); if(a.ias<0) a.ias=0;
   if(a.ias<0.3&&rem<1.5){ endPath(a); return; }
   const s0=P.s; P.s=Math.min(P.cum.at(-1),P.s+a.ias*KT*dt); if(stopS!=null) P.s=Math.min(P.s,Math.max(stopS,s0));
   if(a.kind==='ac'){ if(wheelStep(a,P,dt,s0)) return; }
@@ -1531,7 +1531,7 @@ document.querySelectorAll('[data-acm]').forEach(b=>b.onclick=()=>{ const a=SEL; 
   if(acmKind==='del'){ TR.splice(TR.indexOf(a),1); select(null); toast(a.cs+' kaldırıldı'); return; }
   if(a.kind==='veh'&&acmKind!=='cs'&&acmKind!=='spd'){ toast('Yer araçları için sadece callsign ve taksi hızı değişir.'); return; }
   const T={hdg:['Arrange heading',`<label>Heading (°)<input id="m1" type="number" min="1" max="360" value="${pad3(a.tgt?a.tgt.hdg:a.hdg)}"></label><label>Dönüş<select id="m2"><option value="">En kısa</option><option value="L">Sola</option><option value="R">Sağa</option></select></label>`],
-    spd:!a.air?['Taksi hızı',`<label>Taksi hızı (kt)<input id="m1" type="number" min="1" max="${TAXIMAX(a)}" value="${Math.round(a.taxiSpd||taxiDef(a))}"></label><div class="hint">Şu an ${Math.round(a.ias)} kt · en fazla ${TAXIMAX(a)} kt. Dönüşlerde uçak yine yavaşlar.</div>`]:['IAS / TAS',`<label>IAS (kt)<input id="m1" type="number" value="${Math.round(a.tgt?a.tgt.spd:a.ias)}"></label><div class="hint">Şu an IAS ${Math.round(a.ias)} kt · TAS ${Math.round(a.ias*(1+0.02*a.alt/1000))} kt · GS ${Math.round(a.gs||a.ias)} kt</div>`],
+    spd:!a.air?['Taksi hızı',`<label>Taksi hızı (kt)<input id="m1" type="number" min="1" max="${TAXIMAX(a)}" value="${Math.round(a.taxiSpd||taxiDef(a))}"></label><div class="hint">Şu an ${Math.round(a.ias)} kt · en fazla ${TAXIMAX(a)} kt. Dönüşlerde ${a.kind==='veh'?'araç':'uçak'} yine yavaşlar.</div>`]:['IAS / TAS',`<label>IAS (kt)<input id="m1" type="number" value="${Math.round(a.tgt?a.tgt.spd:a.ias)}"></label><div class="hint">Şu an IAS ${Math.round(a.ias)} kt · TAS ${Math.round(a.ias*(1+0.02*a.alt/1000))} kt · GS ${Math.round(a.gs||a.ias)} kt</div>`],
     cs:['Callsign',`<label>Callsign<input id="m1" value="${a.cs}"></label>`],
     alt:['Altitude',`<label>Altitude (ft)<input id="m1" type="number" step="100" value="${Math.round(a.tgt?a.tgt.alt:a.alt)}"></label>`]}[acmKind];
   $('acmT').textContent=T[0]; $('acmBody').innerHTML=T[1]; $('acmErr').textContent=''; $('dlgAcm').hidden=false; $('m1').focus(); });

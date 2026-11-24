@@ -199,8 +199,13 @@ const MODELS = (()=>{
   }
 
   // ---------- vehicles ----------
-  function lightBar(g,y,z,w,colors,fl,rate){ colors.forEach((c,i)=>{ const on=M(c,true), off=M(new THREE.Color(c).multiplyScalar(0.25).getStyle(),true);
-      const m=box(w/colors.length*0.9,0.16,0.3,on); m.position.set(-w/2+(i+0.5)*w/colors.length,y,z); g.add(m); fl.push({m,on,off,ph:i%2?0.5:0,rate:rate||2.2}); }); }
+  // beacon glow: additive sprite with a fixed on-screen size, so the flash reads from the tower at any zoom
+  let GLOWTEX=null; function glowTex(){ if(GLOWTEX) return GLOWTEX; const c=document.createElement('canvas'); c.width=c.height=64; const x=c.getContext('2d'), gr=x.createRadialGradient(32,32,0,32,32,32);
+    gr.addColorStop(0,'rgba(255,255,255,1)'); gr.addColorStop(0.25,'rgba(255,255,255,0.85)'); gr.addColorStop(1,'rgba(255,255,255,0)'); x.fillStyle=gr; x.fillRect(0,0,64,64); GLOWTEX=new THREE.CanvasTexture(c); return GLOWTEX; }
+  function glow(c){ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex(),color:c,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,depthTest:false,sizeAttenuation:false})); s.renderOrder=10; s.scale.set(0.016,0.016,1); s.visible=false; return s; }
+  function lightBar(g,y,z,w,colors,fl,rate){ colors.forEach((c,i)=>{ const on=M(c,true), off=M(new THREE.Color(c).multiplyScalar(0.18).getStyle(),true);
+      const m=box(w/colors.length*0.9,0.3,0.4,on); m.position.set(-w/2+(i+0.5)*w/colors.length,y,z); g.add(m);
+      const sp=glow(c); sp.position.copy(m.position); sp.position.y+=0.2; g.add(sp); fl.push({m,on,off,sp,ph:i%2?0.5:0,rate:rate||2.2}); }); }
   function wheelsOn(g,xs,zs,r,w){ for(const z of zs) for(const x of xs){ const wh=wheel(r,w); wh.position.set(x,r,z); g.add(wh); } }
   const V={
     fire(){ // ARFF 6x6, red, roof turret, white stripes
@@ -210,7 +215,7 @@ const MODELS = (()=>{
       const bd=box(3.0,2.8,7.6,red); bd.position.set(0,2.3,0.6); g.add(bd);
       const st=box(3.02,0.18,7.6,M(WHITE)); st.position.set(0,1.6,0.6); g.add(st);
       const tur=cyl(0.12,0.18,2.2,8,M(GREY)); tur.position.set(0,3.6,-5.0); g.add(tur);
-      wheelsOn(g,[-1.3,1.3],[-4.3,1.2,3.4],0.7,0.6); lightBar(g,3.3,-4.2,2.4,['#2a6bff','#ff2a2a','#2a6bff','#ff2a2a'],fl,2.5);
+      wheelsOn(g,[-1.3,1.3],[-4.3,1.2,3.4],0.7,0.6); lightBar(g,3.3,-4.2,2.4,['#0a3cff','#ff0010','#0a3cff','#ff0010'],fl,2.5);
       g.userData={flashers:fl,lights:{}}; return g; },
     police(){ // electric SUV, white/blue, blue-red bar
       const g=new THREE.Group(), fl=[];
@@ -218,7 +223,7 @@ const MODELS = (()=>{
       const up=box(1.75,0.65,2.6,M(WHITE)); up.position.set(0,1.6,0.2); g.add(up);
       const gl=box(1.77,0.45,2.62,M(GLASS)); gl.position.set(0,1.62,0.2); g.add(gl);
       const bl=box(1.92,0.32,3.0,M('#1f4fc2')); bl.position.set(0,0.85,0.3); g.add(bl);
-      wheelsOn(g,[-0.85,0.85],[-1.45,1.45],0.38,0.3); lightBar(g,2.0,0.1,1.2,['#2a6bff','#ff2a2a'],fl,3);
+      wheelsOn(g,[-0.85,0.85],[-1.45,1.45],0.38,0.3); lightBar(g,2.0,0.1,1.2,['#0a3cff','#ff0010'],fl,3);
       g.userData={flashers:fl,lights:{}}; return g; },
     ambulance(){ // high-roof van, white with red band
       const g=new THREE.Group(), fl=[];
@@ -226,7 +231,7 @@ const MODELS = (()=>{
       const hood=box(1.9,0.9,0.9,M(WHITE)); hood.position.set(0,0.85,-2.85); g.add(hood);
       const ws=box(1.8,0.7,0.1,M(GLASS)); ws.position.set(0,1.75,-2.48); g.add(ws);
       const rb=box(2.02,0.3,5.6,M('#d81f26')); rb.position.set(0,1.2,0.3); g.add(rb);
-      wheelsOn(g,[-0.9,0.9],[-2.0,1.9],0.38,0.3); lightBar(g,2.85,-2.1,1.4,['#2a6bff','#ff2a2a','#2a6bff'],fl,3);
+      wheelsOn(g,[-0.9,0.9],[-2.0,1.9],0.38,0.3); lightBar(g,2.85,-2.1,1.4,['#0a3cff','#ff0010','#0a3cff'],fl,3);
       g.userData={flashers:fl,lights:{}}; return g; },
     follow(){ // yellow pickup with FOLLOW ME board and amber beacons
       const g=new THREE.Group(), fl=[], y=M('#f2c230');
@@ -235,7 +240,7 @@ const MODELS = (()=>{
       const gl=box(1.82,0.5,2.02,M(GLASS)); gl.position.set(0,1.65,-0.9); g.add(gl);
       const board=box(1.6,0.7,0.12,M('#111')); board.position.set(0,2.4,0.4); g.add(board);
       for(let i=0;i<4;i++){ const c=box(0.4,0.35,0.13,M('#f2c230')); c.position.set(-0.6+i*0.4,2.4+(i%2?0.17:-0.17),0.4); g.add(c); }
-      wheelsOn(g,[-0.85,0.85],[-1.7,1.7],0.4,0.3); lightBar(g,2.05,-0.9,1.4,['#ffb000','#ffb000'],fl,1.8);
+      wheelsOn(g,[-0.85,0.85],[-1.7,1.7],0.4,0.3); lightBar(g,2.05,-0.9,1.4,['#ff9a00','#ff9a00'],fl,1.8);
       g.userData={flashers:fl,lights:{}}; return g; },
     bus(){ // low-floor apron bus, white with black glass band
       const g=new THREE.Group();
@@ -244,8 +249,7 @@ const MODELS = (()=>{
       const fr=box(2.8,1.8,0.06,M(GLASS)); fr.position.set(0,2.0,-6.92); g.add(fr);
       const roof=box(2.6,0.25,8,M('#d8dbe0')); roof.position.set(0,3.2,0); g.add(roof);
       wheelsOn(g,[-1.3,1.3],[-4.4,4.2],0.5,0.4);
-      const bc=M('#ffb000',true); const bm=box(0.25,0.2,0.25,bc); bm.position.set(0,3.4,-5.8); g.add(bm);
-      g.userData={flashers:[{m:bm,on:bc,off:M('#5a3e00',true),ph:0,rate:1.5}],lights:{}}; return g; },
+      g.userData={flashers:[],lights:{}}; return g; },
     catering(){ // truck: white cab, white box on scissor lift, yellow platform
       const g=new THREE.Group();
       const cab=box(2.4,2.3,2.2,M(WHITE)); cab.position.set(0,1.7,-3.6); g.add(cab);
@@ -256,15 +260,15 @@ const MODELS = (()=>{
       const pf=box(2.5,0.15,1.8,M('#f2b705')); pf.position.set(0,4.8,-2.9); g.add(pf);
       const rl=box(2.5,0.9,0.06,M('#f2b705')); rl.position.set(0,5.3,-3.8); g.add(rl);
       wheelsOn(g,[-1.1,1.1],[-3.4,2.6],0.5,0.4);
-      const bc=M('#ffb000',true); const bm=box(0.25,0.2,0.25,bc); bm.position.set(0,2.95,-3.6); g.add(bm);
-      g.userData={flashers:[{m:bm,on:bc,off:M('#5a3e00',true),ph:0,rate:1.5}],lights:{}}; return g; },
+      const fl=[]; lightBar(g,2.95,-3.6,0.5,['#ff9a00'],fl,1.5);
+      g.userData={flashers:fl,lights:{}}; return g; },
   };
   const VTYPE={'Fire truck':'fire','Police':'police','Ambulance':'ambulance','Follow-me':'follow','Passenger bus':'bus','Catering truck':'catering'};
   function vehicle(type){ const f=V[VTYPE[type]]||V.follow; return f(); }
   // flasher animation: call every frame with time in seconds
   function animate(g,t,state){
     const u=g.userData; if(!u) return;
-    (u.flashers||[]).forEach(f=>{ const on=((t*f.rate+f.ph)%1)<0.45; f.m.material=on?f.on:f.off; });
+    (u.flashers||[]).forEach(f=>{ const on=((t*f.rate+f.ph)%1)<0.45; f.m.material=on?f.on:f.off; if(f.sp) f.sp.visible=on; });
     if(u.props&&u.props.length){ const sp=state&&state.eng?(state.ias>5?40:25):0; u.props.forEach(p=>p.rotation.z+=sp*0.016); }
   }
   return { aircraft, vehicle, animate, SPEC:S, VTYPE };
