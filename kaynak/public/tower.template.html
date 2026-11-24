@@ -358,8 +358,10 @@ const PBBS=[];
 }
 function pbbFrame(dt){ const k=1-Math.exp(-dt*0.6);
   for(const B of PBBS){ let goal=B.park, gh=B.deck;
-    objs.forEach(o=>{ if(o.kind!=='ac'||!o.r) return; if(Math.hypot(o.r[0]-B.xy[0],o.r[1]-B.xy[1])>4) return; if(Math.abs(((o.rh-B.hdg)%360+540)%360-180)>10) return; if(o.v&&Math.hypot(o.v[0],o.v[1])>0.3) return;
-      const S=(MODELS.SPEC&&MODELS.SPEC[o.type])||{L:38,R:2,gear:{h:2.6}}, d=S.L/2-Math.max(2.5,S.L*0.12), side=(S.R||2)+1.9;   // forward left door, cab stands just off the fuselage
+    objs.forEach(o=>{ if(o.kind!=='ac'||!o.r) return; if(Math.abs(((o.rh-B.hdg)%360+540)%360-180)>10) return; if(o.v&&Math.hypot(o.v[0],o.v[1])>0.3) return;
+      const S=(MODELS.SPEC&&MODELS.SPEC[o.type])||{L:38,R:2,gear:{h:2.6,nose:5}}, h=o.rh*Math.PI/180, no=S.L/2-(S.gear.nose||5);   // stand point = nose-wheel stop mark
+      if(Math.hypot(o.r[0]+Math.sin(h)*no-B.xy[0],o.r[1]+Math.cos(h)*no-B.xy[1])>4) return;
+      const d=(S.gear.nose||5)-Math.max(2.5,S.L*0.12), side=(S.R||2)+1.9;   // forward left door (from the nose-wheel mark), cab stands just off the fuselage
       goal=[B.xy[0]+B.f[0]*d+B.l[0]*side,B.xy[1]+B.f[1]*d+B.l[1]*side]; gh=Math.max(1.8,(S.gear.h||2)+(S.R||2)*0.6); });
     const c=B.cur; c.p[0]+=(goal[0]-c.p[0])*k; c.p[1]+=(goal[1]-c.p[1])*k; c.h+=(gh-c.h)*k;
     const dx=c.p[0]-B.R[0], dy=c.p[1]-B.R[1], L=Math.max(4,Math.hypot(dx,dy)), yaw=Math.atan2(dx,-dy), mid=[(B.R[0]+c.p[0])/2,(B.R[1]+c.p[1])/2], hm=(B.deck+c.h)/2;
