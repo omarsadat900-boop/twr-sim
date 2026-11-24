@@ -21,6 +21,7 @@
   #top .hint2{font-size:11px;color:var(--muted);white-space:nowrap}
   .menus{display:flex;gap:6px;position:relative}
   .ib{height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;white-space:nowrap}
+  .xb{height:24px;padding:0 7px;border-radius:6px;border:1px solid var(--line2);background:transparent;color:inherit;cursor:pointer;font-size:12px} .xb.on{background:#1f7a3a;border-color:#1f7a3a}
   .ib:hover{background:#1a2e4b} .ib svg{width:16px;height:16px} .ib.on{background:#1f7a3a}
   .drop{position:absolute;top:38px;left:0;z-index:20;background:#0c1729;border:1px solid var(--line2);border-radius:10px;padding:4px;min-width:190px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
   .drop button{display:block;width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px}
@@ -160,6 +161,7 @@
       <button class="ib" id="mMeas" title="Mesafe ölçümü (NM)">📏 Mesafe</button>
       <button class="ib" id="mPat" title="Trafik paterni çizgileri">Patern çizgileri</button>
       <button class="ib" id="mDN" title="Gündüz / gece (meydan ışıkları)">☀ Day</button>
+      <div class="ib" id="mX" title="Senaryo hızı" style="padding:0 4px;gap:2px">Hız <button data-x="1" class="xb on">×1</button><button data-x="2" class="xb">×2</button><button data-x="3" class="xb">×3</button><button data-x="4" class="xb">×4</button></div>
       <div class="drop" id="dPat" hidden>
         <label>Pist <select id="plRwy"></select> <select id="plHand"><option value="L">Sol</option><option value="R">Sağ</option><option value="B">İkisi</option></select></label>
         <label><input type="checkbox" data-leg="dep" checked> Departure</label><label><input type="checkbox" data-leg="up" checked> Upwind</label>
@@ -170,7 +172,7 @@
       <div class="drop" id="dAc" hidden>
         <button data-acm="rep">Reposition Aircraft</button>
         <button data-acm="hdg">Arrange heading</button>
-        <button data-acm="spd">IAS / TAS</button>
+        <button data-acm="spd">IAS / TAS · Taksi hızı</button>
         <button data-acm="cs">Callsign</button>
         <button data-acm="alt">Altitude</button>
         <button data-acm="del" style="color:#ff8a8a">Uçağı kaldır</button>
@@ -457,8 +459,10 @@ function rwyGates(P){ const gates=[], end=P.cum.at(-1);
         gates.push({s:gs,rwy:id,hp}); }
       prev=inn; if(sp>=end) break; } }
   return gates.sort((x,y)=>x.s-y.s); }
+const TAXIMAX=a=>a.kind==='veh'?40:30, taxiDef=a=>a.kind==='veh'?20:15;
 function startPath(a,pts,o){
   if(pts.length<2) return;
+  if(o.mode==='taxi'&&a.taxiSpd&&o.spd>=10) o={...o,spd:a.taxiSpd};
   if(a.kind==='veh'){ if(!o.back&&!o.raw) pts=smoothPath(pts,8); }
   else { pts=pts.map(p=>p.slice()); a.wl={N:nosePt(a),M:mainPt(a)}; pts[0]=o.back?a.wl.M.slice():a.wl.N.slice();
     if(pts.length>1&&dist(pts[0],pts[1])<0.3) pts.splice(1,1); if(pts.length<2) return; }
@@ -479,7 +483,7 @@ function stepPath(a,dt){
   const G=groundLimit(a,P); if(G!=null) tgt=Math.min(tgt,G);
   if(a.blocked) tgt=0;
   let stopS=null; const g=P.gates&&P.gates.find(x=>!x.ok);
-  if(g){ if(a.clr.cross[0]===g.rwy&&g.s-P.s<500){ g.ok=true; a.clr.cross.shift(); a.hs=null; releaseStopBar(g.hp,a); a.status=a.prevTaxiStatus=`RWY ${rwLabel(g.rwy)} geçiyor`+(a.clr.cross.length?`, sonra RWY ${a.clr.cross.map(rwLabel).join(', ')}`:''); renderStrips(); renderFMS(); }
+  if(g){ if(a.clr.cross[0]===g.rwy&&g.s-P.s<500){ g.ok=true; a.clr.cross.shift(); a.hs=null; releaseStopBar(g.hp,a); a.status=a.prevTaxiStatus=`RWY ${xLbl(a,g.rwy)} geçiyor`+(a.clr.cross.length?`, sonra RWY ${a.clr.cross.map(id=>xLbl(a,id)).join(', ')}`:''); renderStrips(); renderFMS(); }
     else { stopS=g.s-(a.kind==='ac'?2:len(a)/2); const room=stopS-P.s; tgt=Math.min(tgt,room<=0.5?0:Math.sqrt(2*1.0*room)/KT);
       if(room<3&&a.ias<0.5&&a.hs!==g){ a.hs=g; a.status=`${g.hp?g.hp+' · ':''}RWY ${rwLabel(g.rwy)} önünde bekliyor`; renderStrips(); renderFMS(); toast(`${a.cs} RWY ${rwLabel(g.rwy)} önünde durdu (izin gerekli)`); } } }
   a.ias+=clamp(tgt-a.ias,-(G===0||a.blocked?4:2)*dt,1.5*dt); if(a.ias<0) a.ias=0;
@@ -714,7 +718,8 @@ function cmd(k){
       const [hn,hd]=nearestNode(a.pos,n=>n.hp&&n.hpType==='runway'); if(hn>=0&&hd<len(a)/2+30){ id=NODES[hn].hpRwy; bx=0; }
       const lim=(a.hs?RWGATE+len(a)/2+180:Math.max(RWGATE+len(a)/2+40,140));
       if(!id||bx>lim){ toast(`Line-Up için uçak pist girişinde (holding point) olmalı. Önce taksi ile ${a.rwy} bekleme noktasına getir.`); return; }
-      let E=RW[a.rwy].rwy===id?a.rwy:rwEnd(id,a.rwy); if(E!==a.rwy){ toast(`${a.cs}: bu giriş ${E} pistine ait; pist ${E} olarak ayarlandı.`); a.rwy=E; }
+      openLineup(a,id,hn,hd); return; }
+    case 'lineupGo': { const {E,id,hn,hd}=a._lu; a.rwy=E;
       const R=RW[E], Nw=nosePt(a), v=[Nw[0]-R.thr[0],Nw[1]-R.thr[1]], s0=clamp(v[0]*R.u[0]+v[1]*R.u[1],0,R.len-300); if(R.len-s0<1500) toast(`Uyarı: bu girişten ${E} için kalan pist ${Math.round(R.len-s0)} m.`);
       const q=[R.thr[0]+R.u[0]*s0,R.thr[1]+R.u[1]*s0], qd=Math.max(60,2.5*wbase(a)), q2=[q[0]+R.u[0]*qd,q[1]+R.u[1]*qd];
       a.lineClr=id; a.blocked=null; releaseStopBar((a.hs&&a.hs.hp)||(hn>=0&&hd<len(a)/2+30?NODES[hn].hp:null),a);
@@ -865,17 +870,28 @@ function uturnPts(a,R){ const r=turnR(a,R), f=hv(a.hdg), side=hv(a.hdg+90), p=a.
   const P=(fw,sd)=>[p[0]+f[0]*fw+side[0]*sd,p[1]+f[1]*fw+side[1]*sd], c=P(1.2*r,0), pts=[p.slice(),P(1.2*r,-r)];
   for(let k=1;k<=12;k++){ const t=(-90+k*15)*D2R; pts.push([c[0]+f[0]*Math.cos(t)*r+side[0]*Math.sin(t)*r, c[1]+f[1]*Math.cos(t)*r+side[1]*Math.sin(t)*r]); }
   pts.push(P(0.2*r,0),P(-0.8*r,0)); return pts; }
+function openLineup(a,id,hn,hd){
+  acmKind='lineup'; $('acmT').textContent='Line-Up: '+a.cs;
+  $('acmBody').innerHTML='<div class="hint" style="margin:0 0 6px">Hangi pist yönüne line-up? (Uçağın bulunduğu pist: '+DATA.runways.find(r=>r.id===id).ends.join('/')+')</div><div style="display:flex;gap:6px">'+
+    ['03L','03R','21L','21R'].map(E=>`<button class="btn ${E===a.rwy?'pri':''}" data-lu="${E}">RWY ${E}</button>`).join('')+'</div>';
+  document.querySelectorAll('[data-lu]').forEach(b=>b.onclick=()=>{ const E=b.dataset.lu;
+    if(physOf(E)!==id){ $('acmErr').textContent=`${a.cs} RWY ${E} girişinde değil. Bu girişten yalnız RWY ${DATA.runways.find(r=>r.id===id).ends.join(' ya da ')} line-up yapılabilir.`; return; }
+    a._lu={E,id,hn,hd}; $('dlgAcm').hidden=true; cmd('lineupGo'); });
+  $('acmErr').textContent=''; $('dlgAcm').hidden=false; }
 function openCross(a){
   acmKind='cross'; a._crossSel=[]; $('acmT').textContent='Cross Runway: '+a.cs;
-  const ids=Object.keys(RWP);
+  const ids=['03L','03R','21L','21R'];
   const draw=()=>{ $('acmBody').innerHTML='<div class="hint" style="margin:0 0 6px">Geçilecek pistleri sırasıyla seç. Seçilmeyen pistin önünde uçak durur (hold short).</div>'+
-    '<div style="display:flex;gap:6px">'+ids.map(id=>`<button class="btn ${a._crossSel.includes(id)?'pri':''}" data-xr="${id}">RWY ${rwLabel(id)}</button>`).join('')+'</div>'+
+    '<div style="display:flex;gap:6px">'+ids.map(id=>`<button class="btn ${a._crossSel.includes(id)?'pri':''}" data-xr="${id}">RWY ${id}</button>`).join('')+'</div>'+
     `<div class="hint" style="margin-top:8px">Talimat: <b>${crossText(a,a._crossSel)||'—'}</b></div>`;
-    document.querySelectorAll('[data-xr]').forEach(b=>b.onclick=()=>{ const id=b.dataset.xr, i=a._crossSel.indexOf(id); if(i>=0) a._crossSel.splice(i,1); else a._crossSel.push(id); draw(); }); };
+    document.querySelectorAll('[data-xr]').forEach(b=>b.onclick=()=>{ const id=b.dataset.xr, i=a._crossSel.indexOf(id); if(i>=0) a._crossSel.splice(i,1);
+      else { const j=a._crossSel.findIndex(e=>physOf(e)===physOf(id)); if(j>=0) a._crossSel.splice(j,1); a._crossSel.push(id); } draw(); }); };
   draw(); $('acmErr').textContent=''; $('dlgAcm').hidden=false; }
+// sel = runway ends as the controller said them (03L/03R/21L/21R)
 function crossText(a,sel){ if(!sel.length) return '';
-  const pend=(a.path&&a.path.gates||[]).filter(g=>!g.ok).map(g=>g.rwy), rest=pend.filter(id=>!sel.includes(id));
-  return sel.map(id=>'Cross RWY '+rwLabel(id)).join(', ')+(rest.length?', hold short of RWY '+rwLabel(rest[0]):', then continue taxi'); }
+  const ph=sel.map(physOf), pend=(a.path&&a.path.gates||[]).filter(g=>!g.ok).map(g=>g.rwy), rest=pend.filter(id=>!ph.includes(id));
+  return sel.map(e=>'Cross RWY '+e).join(', ')+(rest.length?', hold short of RWY '+rwLabel(rest[0]):', then continue taxi'); }
+const xLbl=(a,id)=>(a.clr&&a.clr.lbl&&a.clr.lbl[id])||rwLabel(id);
 function openGiveWay(){
   const g=TR.filter(x=>!x.air&&x.mode!=='crash'); if(g.length<2){ toast('Give Way için yerde en az iki uçak/araç olmalı.'); return; }
   acmKind='gw'; $('acmT').textContent='Give Way: öncelik sırası';
@@ -904,7 +920,9 @@ function simStep(dt){
   for(const a of TR) if(a.kind==='ac'){ if(!a.perf.gear) a.gearDown=true; const t=a.gearDown?1:0; a.gearK=a.gearK==null?t:a.gearK+clamp(t-a.gearK,-dt/6,dt/6); }
   checkCollisions();
 }
-setInterval(()=>{ const now=performance.now(); let dt=(now-simLast)/1000; simLast=now; dt=Math.min(dt,1); simStep(dt); broadcast(); iconState(); },100);
+let SIMX=1;   // scenario speed ×1..×4 (traffic only; the clock and weather stay real time)
+function setSimX(x){ SIMX=x; document.querySelectorAll('#mX [data-x]').forEach(b=>b.classList.toggle('on',+b.dataset.x===x)); }
+setInterval(()=>{ const now=performance.now(); let dt=(now-simLast)/1000; simLast=now; dt=Math.min(dt,1); for(let i=0;i<SIMX;i++) simStep(dt); broadcast(); iconState(); },100);
 // ---------- aircraft external lights (LGT-01..03): one source for pilot + tower ----------
 const LT={TX:1,LD:2,NAV:4,BCN:8,STB:16};
 function lightsOf(a){ if(a.kind!=='ac'||!a.eng||a.mode==='crash') return 0;
@@ -1231,15 +1249,16 @@ document.querySelectorAll('[data-acm]').forEach(b=>b.onclick=()=>{ const a=SEL; 
   if(b.dataset.acm==='rep'){ $('dAc').hidden=true; setMode({k:'tele',a}); return; }
   acmKind=b.dataset.acm;
   if(acmKind==='del'){ TR.splice(TR.indexOf(a),1); select(null); toast(a.cs+' kaldırıldı'); return; }
-  if(a.kind==='veh'&&acmKind!=='cs'){ toast('Yer araçları için sadece callsign değişir.'); return; }
+  if(a.kind==='veh'&&acmKind!=='cs'&&acmKind!=='spd'){ toast('Yer araçları için sadece callsign ve taksi hızı değişir.'); return; }
   const T={hdg:['Arrange heading',`<label>Heading (°)<input id="m1" type="number" min="1" max="360" value="${pad3(a.tgt?a.tgt.hdg:a.hdg)}"></label><label>Dönüş<select id="m2"><option value="">En kısa</option><option value="L">Sola</option><option value="R">Sağa</option></select></label>`],
-    spd:['IAS / TAS',`<label>IAS (kt)<input id="m1" type="number" value="${Math.round(a.tgt?a.tgt.spd:a.ias)}"></label><div class="hint">Şu an IAS ${Math.round(a.ias)} kt · TAS ${Math.round(a.ias*(1+0.02*a.alt/1000))} kt · GS ${Math.round(a.gs||a.ias)} kt</div>`],
+    spd:!a.air?['Taksi hızı',`<label>Taksi hızı (kt)<input id="m1" type="number" min="1" max="${TAXIMAX(a)}" value="${Math.round(a.taxiSpd||taxiDef(a))}"></label><div class="hint">Şu an ${Math.round(a.ias)} kt · en fazla ${TAXIMAX(a)} kt. Dönüşlerde uçak yine yavaşlar.</div>`]:['IAS / TAS',`<label>IAS (kt)<input id="m1" type="number" value="${Math.round(a.tgt?a.tgt.spd:a.ias)}"></label><div class="hint">Şu an IAS ${Math.round(a.ias)} kt · TAS ${Math.round(a.ias*(1+0.02*a.alt/1000))} kt · GS ${Math.round(a.gs||a.ias)} kt</div>`],
     cs:['Callsign',`<label>Callsign<input id="m1" value="${a.cs}"></label>`],
     alt:['Altitude',`<label>Altitude (ft)<input id="m1" type="number" step="100" value="${Math.round(a.tgt?a.tgt.alt:a.alt)}"></label>`]}[acmKind];
   $('acmT').textContent=T[0]; $('acmBody').innerHTML=T[1]; $('acmErr').textContent=''; $('dlgAcm').hidden=false; $('m1').focus(); });
 $('acmX').onclick=()=>$('dlgAcm').hidden=true;
-$('acmGo').onclick=()=>{ if(acmKind==='cross'){ const a=SEL; if(!a||!a._crossSel||!a._crossSel.length){ $('acmErr').textContent='Pist seçilmedi: Cross Runway reddedildi. Geçilecek pist(ler)i sırayla seç.'; return; }
-    a.clr.cross=a._crossSel.slice(); a.status=crossText(a,a.clr.cross); a.prevTaxiStatus=a.status; a.blocked=null; $('dlgAcm').hidden=true; toast(a.cs+': '+a.status); renderStrips(); renderFMS(); return; }
+$('acmGo').onclick=()=>{ if(acmKind==='lineup'){ $('acmErr').textContent='Bir pist yönü seç.'; return; }
+  if(acmKind==='cross'){ const a=SEL; if(!a||!a._crossSel||!a._crossSel.length){ $('acmErr').textContent='Pist seçilmedi: Cross Runway reddedildi. Geçilecek pist(ler)i sırayla seç.'; return; }
+    a.clr.cross=a._crossSel.map(physOf); a.clr.lbl={}; a._crossSel.forEach(e=>a.clr.lbl[physOf(e)]=e); a.status=crossText(a,a._crossSel); a.prevTaxiStatus=a.status; a.blocked=null; $('dlgAcm').hidden=true; toast(a.cs+': '+a.status); renderStrips(); renderFMS(); return; }
   if(acmKind==='gw'){ const seen={}; let bad='';
     document.querySelectorAll('[data-gw]').forEach(i=>{ const n=i.value.trim(); if(n&&(!/^\d+$/.test(n)||seen[n])) bad='Her sıra numarası bir kez ve tam sayı olmalı.'; if(n) seen[n]=1; }); if(bad){ $('acmErr').textContent=bad; return; }
     document.querySelectorAll('[data-gw]').forEach(i=>{ const x=TR.find(t=>t.id===i.dataset.gw); if(!x) return; const n=i.value.trim(); x.gw=n?+n:null; if(n){ x.blocked=null; } });
@@ -1249,7 +1268,9 @@ $('acmGo').onclick=()=>{ if(acmKind==='cross'){ const a=SEL; if(!a||!a._crossSel
   else { const n=+v; if(!isFinite(n)){ err.textContent='Sayı gir.'; return; }
     if(acmKind==='hdg'){ if(!a.air){ err.textContent='Heading sadece havada verilir.'; return; } a.nav='hdg'; a.app=null; a.tgt.hdg=norm360(n);
       const t=$('m2').value; if(t){ a.nav='turn'; } a.status='Heading '+pad3(n); if(t){ a.turnDir=t==='L'?-1:1; a.nav='hdgdir'; } }
-    if(acmKind==='spd'){ const er=speedError(a,n); if(er){ err.textContent=er; return; } a.tgt.spd=n; a.status='Hız '+Math.round(n)+' kt'; }
+    if(acmKind==='spd'&&!a.air){ if(n<1||n>TAXIMAX(a)){ err.textContent=`Taksi hızı 1–${TAXIMAX(a)} kt olmalı.`; return; }
+      a.taxiSpd=n; if(a.path&&a.path.spd>=10&&a.mode!=='push') a.path.spd=n; a.status='Taksi hızı '+Math.round(n)+' kt'; a.prevTaxiStatus=a.prevTaxiStatus||a.status; }
+    else if(acmKind==='spd'){ const er=speedError(a,n); if(er){ err.textContent=er; return; } a.tgt.spd=n; a.status='Hız '+Math.round(n)+' kt'; }
     if(acmKind==='alt'){ if(a.air&&n>a.perf.ceil){ err.textContent=`${a.perf.name} için en yüksek irtifa ${a.perf.ceil} ft.`; return; } a.tgt.alt=clamp(n,ELEV,a.perf.ceil); a.status=(n>a.alt?'Tırman ':'Alçal ')+Math.round(n)+' ft'; } }
   $('dlgAcm').hidden=true; renderStrips(); renderFMS(); };
 // directional turn (heading with left/right)
@@ -1269,6 +1290,7 @@ function gaCmd(k){ const a=SEL; if(!a||a.kind!=='ac'||!a.air){ toast('Havadaki b
 // pattern lines on the map (APP-04)
 const PATV={on:false,end:null,hand:'L',legs:{dep:1,up:1,cw:1,dw:1,base:1,fin:1}};
 $('plRwy').innerHTML=ENDS.map(e=>`<option>${e}</option>`).join(''); $('plRwy').value=activeRwy;
+document.querySelectorAll('#mX [data-x]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); setSimX(+b.dataset.x); toast('Senaryo hızı ×'+b.dataset.x); });
 $('mDN').onclick=e=>{ e.stopPropagation(); setNight(!WX.inp.night); };
 setTimeout(()=>{ if(WX.inp.night){ $('mDN').textContent='☾ Night'; $('mDN').classList.add('on'); } },0);
 $('mPat').onclick=e=>{ e.stopPropagation(); $('dPat').hidden=!$('dPat').hidden; };
@@ -1362,7 +1384,7 @@ let toastT=0; function toast(m){ const t=$('toast'); t.textContent=m; t.style.op
 // boot
 resize(); buildWxInputs(); for(let i=0;i<5;i++) WX.tick(1); renderAWOS(); renderStrips(); renderFMS();
 requestAnimationFrame(draw); requestAnimationFrame(drawPFD);
-window.__sim={toScreen:p=>S(p),TR,RW,NODES,EDGES,STANDS,addAircraft,addVehicle,cmd,select,setMode,rebuildRoute,commitRoute,simStep,view,WX,joinPattern,patCmd,straightIn,clearLand,gaCmd,lightsOf,SBOFF,setNight,PATV,patLegs,dijkstra,nearestNode,RWP,rwyX,rwyGates,onRwy,openCross,get MODE(){return MODE;}};
+window.__sim={setSimX,get SIMX(){return SIMX},toScreen:p=>S(p),TR,RW,NODES,EDGES,STANDS,addAircraft,addVehicle,cmd,select,setMode,rebuildRoute,commitRoute,simStep,view,WX,joinPattern,patCmd,straightIn,clearLand,gaCmd,lightsOf,SBOFF,setNight,PATV,patLegs,dijkstra,nearestNode,RWP,rwyX,rwyGates,onRwy,openCross,get MODE(){return MODE;}};
 </script>
 </body>
 </html>
