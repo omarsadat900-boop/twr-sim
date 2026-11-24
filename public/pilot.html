@@ -569,7 +569,6 @@ const TYPES={
   GLF4:{name:'Gulfstream IV',cat:'V',w:'M',vs:105,vmin:125,vmax:340,vtx:20,v1:125,vr:130,v2:140,vapp:140,vref:130,vclb:200,clb:3500,des:2500,acc:3.0,dec:3.5,rate:3,ceil:45000,gear:true},
   GLF5:{name:'Gulfstream V',cat:'V',w:'M',vs:100,vmin:120,vmax:340,vtx:20,v1:120,vr:128,v2:140,vapp:135,vref:125,vclb:200,clb:3500,des:2500,acc:3.0,dec:3.5,rate:3,ceil:51000,gear:true},
   DH8D:{name:'Dash 8 Q400',cat:'V',w:'M',vs:95,vmin:110,vmax:286,vtx:18,v1:110,vr:115,v2:120,vapp:125,vref:118,vclb:160,clb:2200,des:2000,acc:2.8,dec:3.5,rate:3,ceil:27000,gear:true},
-  BE50:{name:'Beechcraft 500',cat:'V',w:'L',vs:95,vmin:112,vmax:320,vtx:20,v1:108,vr:113,v2:122,vapp:128,vref:118,vclb:180,clb:3500,des:2500,acc:3.0,dec:3.5,rate:3,ceil:45000,gear:true},
   B738:{name:'Boeing 737-800',cat:'I',w:'M',vs:115,vmin:130,vmax:340,vtx:20,v1:140,vr:145,v2:152,vapp:150,vref:142,vclb:220,clb:2500,des:2200,acc:3.2,dec:4,rate:3,ceil:41000,gear:true},
   B763:{name:'Boeing 767',cat:'I',w:'H',vs:118,vmin:135,vmax:360,vtx:20,v1:145,vr:150,v2:158,vapp:150,vref:142,vclb:230,clb:2200,des:2200,acc:3.0,dec:4,rate:3,ceil:43000,gear:true},
   B744:{name:'Boeing 747',cat:'I',w:'H',vs:125,vmin:140,vmax:365,vtx:20,v1:155,vr:165,v2:175,vapp:160,vref:152,vclb:240,clb:1800,des:2000,acc:2.6,dec:3.5,rate:3,ceil:45000,gear:true},
@@ -581,7 +580,7 @@ for(const k in TYPES){ TYPES[k].span=DIM[k][0]; TYPES[k].len=DIM[k][1]; }
 const VEHDIM={'Fire truck':[3,12],'Police':[1.9,4.6],'Ambulance':[2,6.5],'Follow-me':[1.9,5.2],'Passenger bus':[3,13.8],'Catering truck':[2.5,9]};
 const span=a=>a.kind==='veh'?(VEHDIM[a.type]||[2.5,6])[0]:a.perf.span, len=a=>a.kind==='veh'?(VEHDIM[a.type]||[2.5,6])[1]:a.perf.len;
 const followGap=a=>a.kind==='veh'?25:(a.perf.w==='L'?80:150);
-const OLDTYPE={A321:'A320',B739:'B738',A333:'A359',B77W:'B744',AT72:'DH8D',DA42:'C172'};
+const OLDTYPE={BE50:'BE40',A321:'A320',B739:'B738',A333:'A359',B77W:'B744',AT72:'DH8D',DA42:'C172'};
 // spoken check for a requested IAS; returns an error text or ''
 function speedError(a,n){ const t=a.perf; if(!a.air) return 'Yerdeki uçağa IAS verilmez; taksi hızı otomatik.';
   if(n<t.vmin) return `${t.name} için en düşük güvenli hız ${t.vmin} kt (stall ${t.vs} kt). ${Math.round(n)} kt kabul edilmez.`;
