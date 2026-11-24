@@ -344,7 +344,7 @@ const PBBS=[];
   const st=DATA.stands.filter(x=>+x.id>=103&&+x.id<=120);
   const hits=st.map(x=>ray(x.xy,x.hdg)), known=hits.filter(v=>v!=null&&v<130), avg=known.length?known.reduce((a,b)=>a+b,0)/known.length:100;
   st.forEach((x,i)=>{ const t=(hits[i]!=null&&hits[i]<130)?hits[i]:avg, h=x.hdg*Math.PI/180, f=[Math.sin(h),Math.cos(h)], l=[-Math.cos(h),Math.sin(h)];   // f toward the terminal, l = aircraft's left
-    const P=(a,b)=>[x.xy[0]+f[0]*a+l[0]*b,x.xy[1]+f[1]*a+l[1]*b], F=P(t,10), R=P(Math.min(t-18,58),10), deck=4.6;
+    const P=(a,b)=>[x.xy[0]+f[0]*a+l[0]*b,x.xy[1]+f[1]*a+l[1]*b], F=P(Math.max(t,22),12), R=P(Math.min(Math.max(t,22)-6,14),12), deck=4.6;   // stand point = nose-wheel stop mark; rotunda just ahead-left of the nose so the bridge meets the forward left door
     const g=new THREE.Group(); scene.add(g);
     const link=new THREE.Mesh(new THREE.BoxGeometry(3.2,3,1),mat); g.add(link);
     { const dx=R[0]-F[0], dy=R[1]-F[1], L=Math.hypot(dx,dy); link.scale.z=L; link.position.set((F[0]+R[0])/2,deck+1.5,-(F[1]+R[1])/2); link.rotation.y=Math.atan2(dx,-dy); }
@@ -353,7 +353,7 @@ const PBBS=[];
     const rc=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,deck,8),dark); rc.position.set(R[0],deck/2,-R[1]); g.add(rc);
     const tun=new THREE.Mesh(new THREE.BoxGeometry(2.9,2.8,1),mat), cab=new THREE.Mesh(new THREE.BoxGeometry(4,3.1,3.2),glass), leg=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,1,8),dark);
     const wheels=new THREE.Mesh(new THREE.BoxGeometry(3,0.9,1.2),dark); g.add(tun,cab,leg,wheels);
-    const park=P(Math.min(t-18,58)-14,14);   // retracted cab position, ahead of the nose and outside the stand
+    const park=P(0,15);   // retracted cab position, ahead of the nose and outside the stand
     PBBS.push({id:x.id,xy:x.xy,hdg:x.hdg,R,park,deck,cur:{p:park.slice(),h:deck},tun,cab,leg,wheels,f,l}); });
 }
 function pbbFrame(dt){ const k=1-Math.exp(-dt*0.6);
