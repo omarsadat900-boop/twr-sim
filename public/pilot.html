@@ -204,7 +204,7 @@
       <label>HDG<input id="aHdg" type="number" min="0" max="360" value="036"></label>
       <label>Altitude (ft)<input id="aAlt" type="number" step="100" value="3125"></label>
       <label>Speed (kt)<input id="aSpd" type="number" value="0"></label>
-      <label>Kural<select id="aRules"><option value="I">IFR</option><option value="V">VFR</option></select></label>
+      <label>Kategori<select id="aRules" disabled><option value="I">IFR</option><option value="V">VFR</option></select></label>
     </div>
     <div class="sub">Konum</div>
     <div class="fgrid" id="locRow">
@@ -226,7 +226,7 @@
   <section id="secVeh">
     
     <div class="fgrid">
-      <label>Type<select id="vType"><option>Ambulance</option><option>Fire truck</option><option>Follow-me</option><option>Pushback tug</option><option>Fuel truck</option><option>Bus</option><option>Maintenance</option><option>Bird control</option></select></label>
+      <label>Type<select id="vType"></select></label>
       <label>Callsign<input id="vCs" placeholder="FOLLOW 1"></label>
       <label>Heading<input id="vHdg" type="number" value="0"></label>
       <label>LON<input id="vLon"></label>
@@ -530,10 +530,29 @@ function nearestNode(p,filter){ let b=-1,bd=1e9; NODES.forEach(n=>{ if(filter&&!
 // ======================================================================
 //  aircraft types / airlines (temporary list until Omar sends the real one)
 // ======================================================================
-const TYPES={ // vr / vapp kt, climb fpm, wake
-  A320:{vr:142,vapp:135,clb:2200,w:'M'}, A321:{vr:148,vapp:140,clb:2000,w:'M'}, B738:{vr:150,vapp:142,clb:2200,w:'M'},
-  B739:{vr:152,vapp:145,clb:2000,w:'M'}, A333:{vr:155,vapp:140,clb:1800,w:'H'}, B77W:{vr:165,vapp:150,clb:1800,w:'H'},
-  AT72:{vr:110,vapp:110,clb:1300,w:'M'}, C172:{vr:55,vapp:65,clb:700,w:'L'}, DA42:{vr:70,vapp:80,clb:1000,w:'L'} };
+// The 12 types allowed by the spec (SYS-02). cat = simulation class (V/I), not real flight rules.
+// kt: vs stall, vmin min safe IAS (air), vmax max IAS, vtx taxi, v1/vr/v2 (v1:null = not applicable), vapp approach, vref landing,
+// vclb initial climb; fpm: clb / des; acc kt/s on take-off roll; dec kt/s braking; rate °/s turn; ceil ft; gear: retractable?
+const TYPES={
+  C172:{name:'Cessna 172',cat:'V',w:'L',vs:48,vmin:60,vmax:160,vtx:15,v1:null,vr:55,v2:null,vapp:70,vref:62,vclb:75,clb:700,des:700,acc:2.2,dec:3,rate:4,ceil:14000,gear:false},
+  BE40:{name:'Beechcraft 400',cat:'V',w:'L',vs:92,vmin:110,vmax:320,vtx:20,v1:105,vr:110,v2:120,vapp:125,vref:115,vclb:180,clb:3500,des:2500,acc:3.0,dec:3.5,rate:3,ceil:45000,gear:true},
+  GLF4:{name:'Gulfstream IV',cat:'V',w:'M',vs:105,vmin:125,vmax:340,vtx:20,v1:125,vr:130,v2:140,vapp:140,vref:130,vclb:200,clb:3500,des:2500,acc:3.0,dec:3.5,rate:3,ceil:45000,gear:true},
+  GLF5:{name:'Gulfstream V',cat:'V',w:'M',vs:100,vmin:120,vmax:340,vtx:20,v1:120,vr:128,v2:140,vapp:135,vref:125,vclb:200,clb:3500,des:2500,acc:3.0,dec:3.5,rate:3,ceil:51000,gear:true},
+  DH8D:{name:'Dash 8 Q400',cat:'V',w:'M',vs:95,vmin:110,vmax:286,vtx:18,v1:110,vr:115,v2:120,vapp:125,vref:118,vclb:160,clb:2200,des:2000,acc:2.8,dec:3.5,rate:3,ceil:27000,gear:true},
+  BE50:{name:'Beechcraft 500',cat:'V',w:'L',vs:95,vmin:112,vmax:320,vtx:20,v1:108,vr:113,v2:122,vapp:128,vref:118,vclb:180,clb:3500,des:2500,acc:3.0,dec:3.5,rate:3,ceil:45000,gear:true},
+  B738:{name:'Boeing 737-800',cat:'I',w:'M',vs:115,vmin:130,vmax:340,vtx:20,v1:140,vr:145,v2:152,vapp:150,vref:142,vclb:220,clb:2500,des:2200,acc:3.2,dec:4,rate:3,ceil:41000,gear:true},
+  B763:{name:'Boeing 767',cat:'I',w:'H',vs:118,vmin:135,vmax:360,vtx:20,v1:145,vr:150,v2:158,vapp:150,vref:142,vclb:230,clb:2200,des:2200,acc:3.0,dec:4,rate:3,ceil:43000,gear:true},
+  B744:{name:'Boeing 747',cat:'I',w:'H',vs:125,vmin:140,vmax:365,vtx:20,v1:155,vr:165,v2:175,vapp:160,vref:152,vclb:240,clb:1800,des:2000,acc:2.6,dec:3.5,rate:3,ceil:45000,gear:true},
+  A320:{name:'Airbus A320',cat:'I',w:'M',vs:110,vmin:125,vmax:350,vtx:20,v1:140,vr:143,v2:150,vapp:140,vref:132,vclb:220,clb:2500,des:2200,acc:3.2,dec:4,rate:3,ceil:39000,gear:true},
+  A310:{name:'Airbus A310',cat:'I',w:'H',vs:112,vmin:130,vmax:360,vtx:20,v1:145,vr:150,v2:156,vapp:145,vref:138,vclb:230,clb:2200,des:2200,acc:3.0,dec:4,rate:3,ceil:41000,gear:true},
+  A359:{name:'Airbus A350',cat:'I',w:'H',vs:115,vmin:132,vmax:340,vtx:20,v1:150,vr:155,v2:162,vapp:150,vref:140,vclb:240,clb:2300,des:2200,acc:3.0,dec:4,rate:3,ceil:43000,gear:true} };
+const OLDTYPE={A321:'A320',B739:'B738',A333:'A359',B77W:'B744',AT72:'DH8D',DA42:'C172'};
+// spoken check for a requested IAS; returns an error text or ''
+function speedError(a,n){ const t=a.perf; if(!a.air) return 'Yerdeki uçağa IAS verilmez; taksi hızı otomatik.';
+  if(n<t.vmin) return `${t.name} için en düşük güvenli hız ${t.vmin} kt (stall ${t.vs} kt). ${Math.round(n)} kt kabul edilmez.`;
+  if(n>t.vmax) return `${t.name} için en yüksek hız ${t.vmax} kt. ${Math.round(n)} kt kabul edilmez.`; return ''; }
+const VEHTYPES=['Fire truck','Police','Ambulance','Follow-me','Passenger bus','Catering truck'];
+const VEHNAME={'Fire truck':'İtfaiye','Police':'Polis','Ambulance':'Ambulans','Follow-me':'Follow-Me','Passenger bus':'Yolcu otobüsü','Catering truck':'Catering'};
 const AIRLINES=['THY','PGT','AJA','SXS','KKK','TKJ','—'];
 function airlineOf(cs){ const p=cs.slice(0,3).toUpperCase(); return AIRLINES.includes(p)?p:'—'; }
 const APT={}; GEO.airports.forEach(a=>APT[a.c]=a);
@@ -545,9 +564,9 @@ const TR=[]; let SEL=null, nextSsr=4601;
 const isAir=a=>a.kind==='ac'&&a.air;
 function ssrNext(){ let s; do{ s=String(nextSsr++).padStart(4,'0'); }while(/[89]/.test(s)); return s; }
 function addAircraft(o){
-  const t=TYPES[o.type]||TYPES.A320;
+  o.type=TYPES[o.type]?o.type:(OLDTYPE[o.type]||'A320'); const t=TYPES[o.type];
   const a={ kind:'ac', id:'A'+Math.random().toString(36).slice(2,8), cs:o.cs.toUpperCase(), type:o.type, airline:o.airline||airlineOf(o.cs),
-    adep:(o.adep||'').toUpperCase(), ades:(o.ades||'').toUpperCase(), wpt:o.wpt||'', sid:o.sid||'', rules:o.rules||'I',
+    adep:(o.adep||'').toUpperCase(), ades:(o.ades||'').toUpperCase(), wpt:o.wpt||'', sid:o.sid||'', rules:t.cat,
     ssr:o.ssr||ssrNext(), xpdr:'ALT', ident:0, rwy:o.rwy||activeRwy, pos:o.pos.slice(), hdg:norm360(o.hdg||0),
     alt:Math.max(ELEV,o.alt||ELEV), ias:o.spd||0, vs:0, turn:0, perf:t,
     air:(o.alt||ELEV)>ELEV+50 && (o.spd||0)>40, mode:'parked', nav:'hdg', tgt:{hdg:norm360(o.hdg||0),alt:Math.max(ELEV,o.alt||ELEV),spd:o.spd||0},
@@ -602,12 +621,12 @@ function windAt(){ return WX.cur; }
 function stepAir(a,dt){
   nav(a,dt);
   // heading
-  const d=norm180(a.tgt.hdg-a.hdg), rate=(a.perf.w==='L'?4:3);
+  const d=norm180(a.tgt.hdg-a.hdg), rate=a.perf.rate||3;
   let turn=a.forceTurn? a.forceTurn*rate : clamp(d,-rate,rate)/1;
   turn=clamp(turn,-rate,rate); a.turn=turn; a.hdg=norm360(a.hdg+turn*dt);
   // altitude
   if(a.glide!=null){ const want=a.glide; const need=(want-a.alt)/dt*60; a.vs=clamp(need,-2500,a.vs>0?0:0); if(a.alt<want) a.vs=0; }
-  else { const da=a.tgt.alt-a.alt; a.vs=clamp(da*4,-1800,a.perf.clb); if(Math.abs(da)<5) a.vs=0; }
+  else { const da=a.tgt.alt-a.alt; a.vs=clamp(da*4,-(a.perf.des||1800),a.perf.clb); if(Math.abs(da)<5) a.vs=0; }
   a.alt+=a.vs/60*dt;
   // speed
   a.ias+=clamp(a.tgt.spd-a.ias,-1.2*dt,1.5*dt);
@@ -943,7 +962,7 @@ function renderFMS(){
     <div class="cs">${a.cs}</div>
     <div class="grid"><span class="box">${a.ssr}</span><select id="fRwy">${ENDS.map(e=>`<option ${e===a.rwy?'selected':''}>${e}</option>`).join('')}</select><span class="box">${a.adep||'----'}</span><span class="box">${a.ades||'----'}</span></div>
     <div class="st">${a.status||'—'}</div>`;
-  el.querySelectorAll('.tg').forEach(t=>t.onclick=()=>{ a.rules=t.dataset.r; renderFMS(); renderStrips(); });
+  el.querySelectorAll('.tg').forEach(t=>t.onclick=()=>toast(`${a.perf.name} bu simülasyonda ${a.rules==='V'?'VFR':'IFR'} kategorisinde; kategori uçak tipine bağlı.`));
   document.getElementById('fRwy').onchange=e=>{ a.rwy=e.target.value; renderStrips(); };
   document.getElementById('xCode').textContent=a.ssr;
   document.querySelectorAll('.xpdr button').forEach(b=>b.classList.toggle('on',a.xpdr===b.dataset.x||(b.dataset.x==='IDENT'&&a.ident>Date.now())));
@@ -1018,7 +1037,7 @@ function openAdd(which){
 }
 document.querySelectorAll('#dlgAdd [data-tab]').forEach(b=>b.onclick=()=>openAdd(b.dataset.tab));
 $('secVeh').hidden=true;
-$('aType').innerHTML=Object.keys(TYPES).map(t=>`<option>${t}</option>`).join('');
+$('aType').innerHTML=['V','I'].map(c=>`<optgroup label="${c==='V'?'VFR kategorisi':'IFR kategorisi'}">`+Object.keys(TYPES).filter(t=>TYPES[t].cat===c).map(t=>`<option value="${t}">${TYPES[t].name}</option>`).join('')+'</optgroup>').join(''); $('aType').value='A320'; $('aRules').value='I';
 $('aAl').innerHTML=AIRLINES.map(t=>`<option>${t}</option>`).join('');
 const HPN=NODES.filter(n=>n.hp).sort((x,y)=>x.hp.localeCompare(y.hp,'tr',{numeric:true}));
 $('aStand').innerHTML=Object.keys(STANDS).sort((a,b)=>a.localeCompare(b,'tr',{numeric:true})).map(s=>`<option>${s}</option>`).join('');
@@ -1031,11 +1050,12 @@ const LOCHINT={stand:'Uçak park yerinde, motorlar kapalı başlar. IFR uçak ç
   final:'Uçak pistin uzantısında, seçilen mesafede ve pist yönünde başlar; ILS/görerek finali takip eder, glide path\'e gelince alçalır. İniş için LANDING ver.',
   map:'Haritaya tıkla. Yerdeki uçak en yakın taksi yoluna oturtulur; havadaki uçak tıkladığın yerde, verdiğin heading ile başlar.'};
 function locUI(){ const v=$('aLoc').value; document.querySelectorAll('#locRow [data-loc]').forEach(l=>l.hidden=!l.dataset.loc.split(' ').includes(v)); $('locHint').textContent=LOCHINT[v];
-  if(v==='final'){ const nm=+$('aNm').value||10, R=RW[$('aEnd').value]; $('aAlt').value=Math.round((R.elev+nm*318)/100)*100; if(+$('aSpd').value<60) $('aSpd').value=$('aRules').value==='V'?90:180; $('aHdg').value=Math.round(R.qfu); }
+  if(v==='final'){ const nm=+$('aNm').value||10, R=RW[$('aEnd').value]; $('aAlt').value=Math.round((R.elev+nm*318)/100)*100; { const T=TYPES[$('aType').value]; $('aSpd').value=Math.max(T.vapp+20,Math.min(T.vmax,T.cat==='I'?180:T.vapp+30)); } $('aHdg').value=Math.round(R.qfu); }
   if(v==='stand'||v==='hp'||v==='thr'){ $('aAlt').value=ELEV; $('aSpd').value=0; if(!$('aDep').value) $('aDep').value='LTAC'; } }
 $('aLoc').onchange=locUI; $('aNm').onchange=locUI; $('aEnd').onchange=locUI; locUI();
 $('aCs').oninput=()=>{ const al=airlineOf($('aCs').value); if(al!=='—') $('aAl').value=al; };
-$('aType').onchange=()=>{ if($('aType').value==='C172'||$('aType').value==='DA42') $('aRules').value='V'; locUI(); };
+$('vType').innerHTML=VEHTYPES.map(v=>`<option value="${v}">${VEHNAME[v]}</option>`).join('');
+$('aType').onchange=()=>{ $('aRules').value=TYPES[$('aType').value].cat; locUI(); };
 $('aPick').onclick=()=>{ setMode({k:'place',f:'a'}); };
 $('vPick').onclick=()=>{ setMode({k:'place',f:'v'}); };
 function readPos(f){ const lat=parseFloat($(f+'Lat').value), lon=parseFloat($(f+'Lon').value); if(!isFinite(lat)||!isFinite(lon)) return null; return g2l(lat,lon); }
@@ -1059,11 +1079,11 @@ $('aGo').onclick=()=>{
     if(n.hpRwy){ const e=n.hpRwy.split('/'); const pick=e.includes(activeRwy)?activeRwy:(e.includes(base.rwy)?base.rwy:e[0]); a.rwy=pick; } }
   else if(loc==='thr'){ const E=base.rwy, R=RW[E]; a=addAircraft({...base,pos:[R.thr[0]+R.u[0]*40,R.thr[1]+R.u[1]*40],hdg:R.qfu,alt:ELEV,spd:0}); a.mode='lined'; a.status='Pistte, hazır '+E; }
   else if(loc==='final'){ const E=base.rwy, R=RW[E], nm=+$('aNm').value; if(!(nm>=1&&nm<=40)){ err.textContent='Mesafe 1–40 NM olmalı.'; return; }
-    if(alt<R.elev+500){ err.textContent='Finaldeki uçak için irtifa en az '+(R.elev+500)+' ft olmalı.'; return; } if(spd<50){ err.textContent='Hız en az 50 kt olmalı.'; return; }
+    if(alt<R.elev+500){ err.textContent='Finaldeki uçak için irtifa en az '+(R.elev+500)+' ft olmalı.'; return; } { const er=speedError({air:true,perf:TYPES[base.type]},spd); if(er){ err.textContent=er; return; } }
     a=addAircraft({...base,pos:[R.thr[0]-R.u[0]*nm*NM,R.thr[1]-R.u[1]*nm*NM],hdg:R.qfu,alt,spd});
     a.nav='app'; a.app={end:E,est:true,visual:base.rules==='V',ph:'int',fd:nm*NM}; a.status=`Final ${E} ${nm} NM`; }
   else { const pos=readPos('a'); if(!pos){ err.textContent='Haritadan seç ya da LAT/LON yaz.'; return; }
-    if(alt>ELEV+50){ if(spd<50){ err.textContent='Havadaki uçak için hız en az 50 kt olmalı.'; return; } a=addAircraft({...base,pos,hdg,alt,spd}); }
+    if(alt>ELEV+50){ { const er=speedError({air:true,perf:TYPES[base.type]},spd); if(er){ err.textContent=er; return; } } if(alt>TYPES[base.type].ceil){ err.textContent=`${TYPES[base.type].name} için en yüksek irtifa ${TYPES[base.type].ceil} ft.`; return; } a=addAircraft({...base,pos,hdg,alt,spd}); }
     else { const sn=snapGround(pos,hdg); if(!sn){ err.textContent='Bu nokta taksi yolu ya da piste çok uzak (150 m üstü). Daha yakın bir yere tıkla.'; return; }
       a=addAircraft({...base,pos:sn.pos,hdg:sn.hdg,alt:ELEV,spd:0}); } }
   toast(`${a.cs} eklendi`); renderStrips(); renderFMS();
@@ -1089,8 +1109,8 @@ $('acmGo').onclick=()=>{ const a=SEL, v=$('m1').value.trim(), err=$('acmErr');
   else { const n=+v; if(!isFinite(n)){ err.textContent='Sayı gir.'; return; }
     if(acmKind==='hdg'){ if(!a.air){ err.textContent='Heading sadece havada verilir.'; return; } a.nav='hdg'; a.app=null; a.tgt.hdg=norm360(n);
       const t=$('m2').value; if(t){ a.nav='turn'; } a.status='Heading '+pad3(n); if(t){ a.turnDir=t==='L'?-1:1; a.nav='hdgdir'; } }
-    if(acmKind==='spd'){ a.tgt.spd=clamp(n,0,350); a.status='Hız '+Math.round(n)+' kt'; }
-    if(acmKind==='alt'){ a.tgt.alt=clamp(n,ELEV,45000); a.status=(n>a.alt?'Tırman ':'Alçal ')+Math.round(n)+' ft'; } }
+    if(acmKind==='spd'){ const er=speedError(a,n); if(er){ err.textContent=er; return; } a.tgt.spd=n; a.status='Hız '+Math.round(n)+' kt'; }
+    if(acmKind==='alt'){ if(a.air&&n>a.perf.ceil){ err.textContent=`${a.perf.name} için en yüksek irtifa ${a.perf.ceil} ft.`; return; } a.tgt.alt=clamp(n,ELEV,a.perf.ceil); a.status=(n>a.alt?'Tırman ':'Alçal ')+Math.round(n)+' ft'; } }
   $('dlgAcm').hidden=true; renderStrips(); renderFMS(); };
 // directional turn (heading with left/right)
 const _nav=nav; nav=function(a,dt){ if(a.nav==='hdgdir'){ a.glide=null; a.forceTurn=0; if(Math.abs(norm180(a.tgt.hdg-a.hdg))>5) a.forceTurn=a.turnDir; else a.nav='hdg'; return; } _nav(a,dt); };
@@ -1161,7 +1181,7 @@ function broadcast(force){ const now=Date.now(); if(!force&&now-lastB<90) return
   const msg={t:'state',wx:{inp:WX.inp,cur:WX.cur,hist:WX.hist.slice(-600),active:activeRwy},
     traffic:TR.map(a=>{ let v=[0,0],vz=0; if(a._bp){ const dt=(now-a._bt)/1000; if(dt>0.02){ v=[(a.pos[0]-a._bp[0])/dt,(a.pos[1]-a._bp[1])/dt]; vz=(a.alt-a._ba)/dt; } }
       a._bp=a.pos.slice(); a._ba=a.alt; a._bt=now;
-      return {id:a.id,kind:a.kind,cs:a.cs,type:a.type,pos:a.pos,hdg:a.hdg,alt:a.alt,air:!!a.air,ias:a.ias,v:[+v[0].toFixed(2),+v[1].toFixed(2)],vz:+vz.toFixed(2)}; })};
+      return {id:a.id,kind:a.kind,cs:a.cs,type:a.type,airline:a.airline,pos:a.pos,hdg:a.hdg,alt:a.alt,air:!!a.air,ias:a.ias,v:[+v[0].toFixed(2),+v[1].toFixed(2)],vz:+vz.toFixed(2)}; })};
   try{ bc&&bc.postMessage(msg); }catch(e){}
   if(NET.on) NET.sendState(force?{wx:{inp:WX.inp},wxc:WX.cur,traffic:msg.traffic}:{wxc:WX.cur,traffic:msg.traffic});
   try{ localStorage.setItem('twrsim.wx',JSON.stringify(msg.wx)); }catch(e){} }
