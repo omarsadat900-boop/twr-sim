@@ -771,6 +771,8 @@ function rwyGeom(r){ const a=r.thr[r.ends[0]].xy, b=r.thr[r.ends[1]].xy; const L
 function rect(a,u,n,from,to,half){ return [[a[0]+u[0]*from+n[0]*half,a[1]+u[1]*from+n[1]*half],[a[0]+u[0]*to+n[0]*half,a[1]+u[1]*to+n[1]*half],
   [a[0]+u[0]*to-n[0]*half,a[1]+u[1]*to-n[1]*half],[a[0]+u[0]*from-n[0]*half,a[1]+u[1]*from-n[1]*half]]; }
 
+// drawn width factors (Omar: wider runways and taxiways, in proportion, so the bigger-drawn aircraft stay on the pavement in turns)
+const TWYW=1.6, RWYW=1.4;
 // aerodrome surface texture: grass + pavement + runway asphalt (1 m per texel)
 const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
 {
@@ -784,9 +786,9 @@ const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
   g.fillStyle='#a3a29c'; for(const p of DATA.pavement){ poly(p); g.fill(); }
   g.fillStyle='#8f8462'; for(const p of DATA.holes){ poly(p); g.fill(); }
   g.strokeStyle='#a3a29c'; g.lineJoin='round';
-  g.lineCap='round'; for(const e of DATA.taxi.edges){ if(e.kind==='runway') continue; g.beginPath(); e.pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); g.lineWidth=(e.kind==='leadin'?16:23)/R; g.stroke(); } g.lineCap='butt';
+  g.lineCap='round'; for(const e of DATA.taxi.edges){ if(e.kind==='runway') continue; g.beginPath(); e.pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); g.lineWidth=(e.kind==='leadin'?16:23)*TWYW/R; g.stroke(); } g.lineCap='butt';
   for(const l of (DATA.pave_lines||[])){ g.beginPath(); l.pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); g.lineWidth=l.w/R; g.stroke(); }
-  for(const r of DATA.runways){ const q=rwyGeom(r), hw=r.width/2;
+  for(const r of DATA.runways){ const q=rwyGeom(r), hw=r.width/2*RWYW;
     g.fillStyle='#45484b'; poly(rect(q.a,q.u,q.n,-r.stopway,0,hw)); g.fill(); poly(rect(q.a,q.u,q.n,q.L,q.L+r.stopway,hw)); g.fill();
     g.fillStyle='#38393b'; poly(rect(q.a,q.u,q.n,0,q.L,hw)); g.fill(); }
   const tex=new THREE.CanvasTexture(c); tex.anisotropy=renderer.capabilities.getMaxAnisotropy(); tex.minFilter=THREE.LinearMipmapLinearFilter;
@@ -912,7 +914,7 @@ const SBAR={};   // runway holding point id -> layer
 const along=(L,step)=>{ const out=[]; for(let s=0;s<=L+0.1;s+=step) out.push(Math.min(s,L)); if(out.at(-1)<L-1) out.push(L); return out; };
 { const W='#fff4d6', G='#2bff6e', Rd='#ff2a1a', Y='#ffcf3a', B='#3d6bff';
   const edge=[], twy=[], twe=[];
-  for(const r of DATA.runways){ const q=rwyGeom(r), hw=r.width/2+1.5, P=(s,o)=>[q.a[0]+q.u[0]*s+q.n[0]*o,q.a[1]+q.u[1]*s+q.n[1]*o];
+  for(const r of DATA.runways){ const q=rwyGeom(r), hw=r.width/2*RWYW+1.5, P=(s,o)=>[q.a[0]+q.u[0]*s+q.n[0]*o,q.a[1]+q.u[1]*s+q.n[1]*o];
     for(const s of along(q.L,60)) for(const o of [-hw,hw]) edge.push([...P(s,o),0.4,W]);
     r.ends.forEach((E,i)=>{ const d=E.slice(0,2), list=DIRL[d]||(DIRL[d]=[]), dir=i?-1:1, s0=i?q.L:0, sEnd=i?0:q.L, uE=[q.u[0]*dir,q.u[1]*dir], nL=[-uE[1],uE[0]];
       const Q=(s,o)=>[q.a[0]+q.u[0]*s+q.n[0]*o,q.a[1]+q.u[1]*s+q.n[1]*o];
@@ -928,7 +930,7 @@ const along=(L,step)=>{ const out=[]; for(let s=0;s<=L+0.1;s+=step) out.push(Mat
       const lay=ptsLayer(pts.map(p=>[...p,Rd]),9); NIGHT.add(lay); PAPI[E]={lay,thr:Q(s0,0),u:uE,elev:r.elev_ft[i]}; }); }
   for(const e of DATA.taxi.edges){ if(e.kind!=='taxiway'&&e.kind!=='taxilane') continue;
     let acc=0; for(let i=1;i<e.pts.length;i++){ const a=e.pts[i-1], b=e.pts[i], L=Math.hypot(b[0]-a[0],b[1]-a[1]); if(L<0.1) continue; const u=[(b[0]-a[0])/L,(b[1]-a[1])/L];
-      for(let s=(30-acc)%30; s<L; s+=30){ const p=[a[0]+u[0]*s,a[1]+u[1]*s]; twy.push([...p,0.25,G]); if(e.kind==='taxiway'&&Math.round((acc+s)/30)%2===0) for(const o of [-11.5,11.5]) twe.push([p[0]-u[1]*o,p[1]+u[0]*o,0.35,B]); }
+      for(let s=(30-acc)%30; s<L; s+=30){ const p=[a[0]+u[0]*s,a[1]+u[1]*s]; twy.push([...p,0.25,G]); if(e.kind==='taxiway'&&Math.round((acc+s)/30)%2===0) for(const o of [-11.5*TWYW,11.5*TWYW]) twe.push([p[0]-u[1]*o,p[1]+u[0]*o,0.35,B]); }
       acc=(acc+L)%30; } }
   NIGHT.add(ptsLayer(edge,5)); NIGHT.add(ptsLayer(twy,3.5)); NIGHT.add(ptsLayer(twe,3.5));
   for(const d in DIRL){ const l=ptsLayer(DIRL[d],4.5); l.userData.dir=d; DIRL[d]=l; NIGHT.add(l); }
@@ -1051,7 +1053,7 @@ function makeVehicle(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.4,2.4,6),
 const objs=new Map(); window.__objs=objs;
 const TRAFFIC_SCALE=2.0, VEH_SCALE=3.5, BUS_SCALE=3.0, VEHLEN={'Fire truck':12,'Police':4.6,'Ambulance':6.5,'Follow-me':5.2,'Passenger bus':13.8,'Catering truck':9};
 let lastTF=0;
-const INTERP_MS=150, CLK={off:0,s:[]};
+const INTERP_MS=250, CLK={off:0,s:[]};
 function clkSample(d){ const n=Date.now(); CLK.s.push([n,d]); while(CLK.s.length&&n-CLK.s[0][0]>5000) CLK.s.shift(); let m=Infinity; for(const q of CLK.s) if(q[1]<m) m=q[1]; CLK.off=m; }
 function trafficFrame(now){
   const T=window.__traffic||{}, seen=new Set(), dt=Math.min(0.2,lastTF?(now-lastTF)/1000:0.016); lastTF=now;
@@ -1066,7 +1068,7 @@ function trafficFrame(now){
     if(o.key!==key){ o.key=key; const sts=ts||wall; clkSample(wall-sts);
       const s={ts:sts,p:a.pos.slice(),alt:a.alt,h:a.hdg,v:a.v||[0,0],vz:a.vz||0}, L=o.buf[o.buf.length-1];
       if(o.rep!==(a.rep||0)||!L||Math.hypot(s.p[0]-L.p[0],s.p[1]-L.p[1])>300){ o.rep=a.rep||0; o.buf=[s]; o.r=null; }
-      else if(s.ts>L.ts){ o.buf.push(s); if(o.buf.length>12) o.buf.shift(); } }
+      else if(s.ts>L.ts){ o.buf.push(s); if(o.buf.length>24) o.buf.shift(); } }
     // render a little in the past and interpolate between the two samples around that moment (smooth on any network)
     const rt=wall-CLK.off-INTERP_MS, B=o.buf; let x,y,al,hd;
     let i=B.length-1; while(i>0&&B[i].ts>rt) i--;

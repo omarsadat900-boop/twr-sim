@@ -645,7 +645,7 @@ function addAircraft(o){
 }
 function addVehicle(o){
   const v={ kind:'veh', id:'V'+Math.random().toString(36).slice(2,8), cs:o.cs.toUpperCase(), type:o.type, pos:o.pos.slice(), hdg:norm360(o.hdg||0),
-    alt:ELEV, ias:0, vs:0, mode:'stopped', air:false, path:null, status:'Bekliyor' };
+    alt:ELEV, ias:0, vs:0, mode:'stopped', air:false, path:null, status:'Bekliyor', clr:{cross:[]} };
   TR.push(v); select(v); renderStrips(); return v;
 }
 
@@ -692,7 +692,7 @@ function startPath(a,pts,o){
   const cum=[0]; for(let i=1;i<pts.length;i++) cum.push(cum[i-1]+dist(pts[i-1],pts[i]));
   if(o.mode==='taxi'&&a.kind==='ac') a.taxiLt=true;
   a.path={pts,cum,s:0,spd:o.spd,back:!!o.back,onEnd:o.onEnd,arg:o.arg}; a.prevTaxiStatus=o.status; a.hs=null;
-  if(a.kind==='ac'&&!o.noGates) a.path.gates=rwyGates(a.path);
+  if(!o.noGates) a.path.gates=rwyGates(a.path);   // aircraft and vehicles hold short of every runway they enter until cleared (Cross Runway)
   a.mode=o.mode; a.status=o.status||a.status;
 }
 function pathPos(P,s){ let i=1; while(i<P.cum.length-1&&P.cum[i]<s) i++; const a=P.pts[i-1],b=P.pts[i],L=P.cum[i]-P.cum[i-1]||1,t=clamp((s-P.cum[i-1])/L,0,1); return [[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t],brg(a,b)]; }
@@ -760,7 +760,7 @@ function windAt(){ return WX.cur; }
 function stepAir(a,dt){
   nav(a,dt); if(a.seq!=null) seqStep(a);
   // heading
-  const d=norm180(a.tgt.hdg-a.hdg), rate=a.perf.rate||3;
+  const d=norm180(a.tgt.hdg-a.hdg), rate=a.nav==="orbit"?clamp(1123/Math.max(60,a.ias),a.perf.rate||3,9):(a.perf.rate||3);   // orbit: ~35° bank, tight circle
   let turn=a.forceTurn? a.forceTurn*rate : clamp(d,-rate,rate)/1;
   turn=clamp(turn,-rate,rate); a.turn=(a.turn||0)+clamp(turn-(a.turn||0),-rate*0.7*dt,rate*0.7*dt);   // bank in/out smoothly (~1.5 s)
   a.hdg=norm360(a.hdg+a.turn*dt);
@@ -782,8 +782,8 @@ function nav(a,dt){
   a.glide=null; a.forceTurn=0;
   switch(a.nav){
     case 'hdg': break;
-    case 'orbit': { a.forceTurn=a.orbit.dir; a.orbit.left-=Math.abs(a.turn||3)*dt; a.tgt.hdg=norm360(a.hdg+a.orbit.dir*90);
-      if(a.orbit.left<=0){ if(a.orbit.cir){ a.nav='circuit'; a.cir=a.orbit.cir; if(a.cir.leg==='downwind') a.cir.leg='join'; a.status='Orbit tamam · Downwind '+a.cir.end+' devam'; } else { a.nav='hdg'; a.tgt.hdg=a.orbit.h0; a.status='Orbit tamam'; } renderStrips(); renderFMS(); } break; }
+    case 'orbit': { a.forceTurn=a.orbit.dir; a.tgt.spd=Math.min(a.orbit.spd0??(a.orbit.spd0=a.tgt.spd),a.perf.vapp+20); a.orbit.left-=Math.abs(a.turn||3)*dt; a.tgt.hdg=norm360(a.hdg+a.orbit.dir*90);
+      if(a.orbit.left<=0){ a.tgt.spd=a.orbit.spd0??a.tgt.spd; if(a.orbit.cir){ a.nav='circuit'; a.cir=a.orbit.cir; if(a.cir.leg==='downwind') a.cir.leg='join'; a.status='Orbit tamam · Downwind '+a.cir.end+' devam'; } else { a.nav='hdg'; a.tgt.hdg=a.orbit.h0; a.status='Orbit tamam'; } renderStrips(); renderFMS(); } break; }
     case 'hold': { const H=a.hold; H.t+=dt;
       if(H.ph===0){ a.forceTurn=1; a.tgt.hdg=norm360(a.hdg+90); if(Math.abs(norm180(a.hdg-(H.inb+180)))<4){H.ph=1;H.t=0;} }
       else if(H.ph===1){ a.tgt.hdg=norm360(H.inb+180); if(H.t>60){H.ph=2;} }
@@ -958,7 +958,7 @@ const ICONS=[
 function cmd(k){
   const a=SEL; if(!a){ toast('Önce bir uçak seç.'); return; }
   const veh=a.kind==='veh';
-  if(veh && !['taxi','taxistop','teleport','park','giveway'].includes(k)){ toast('Bu komut yer aracı için yok.'); return; }
+  if(veh && !['taxi','taxistop','teleport','park','giveway','cross'].includes(k)){ toast('Bu komut yer aracı için yok.'); return; }
   if(k!=='teleport') a.blocked=null;
   switch(k){
     case 'startup': { if(a.air){ toast('Uçak havada; motorlar zaten çalışıyor.'); return; } if(a.eng){ toast(a.cs+' motorları zaten çalışıyor.'); return; }
@@ -1114,6 +1114,13 @@ function rebuildRoute(m){
   const pts=[p0.slice()], names=[]; let cur=start;
   for(const p of m.picks){ if(p===cur) continue; const r=dijkstra(cur,p,a.kind==='veh'); if(!r){ m.preview=null; toast('Bu noktaya yol bulunamadı.'); m.picks.pop(); return rebuildRoute(m); }
     r.pts.forEach((q,i)=>{ if(i===0&&dist(q,pts.at(-1))<1) return; pts.push(q); }); r.names.forEach(n=>{ if(names.at(-1)!==n) names.push(n); }); cur=p; }
+  // don't run to a node behind and come back (that looked like a 360° spin at the start): if the start position already
+  // lies on one of the first route segments, start from that spot on the line
+  { const p=pts[0]; let cut=-1, cp=null;
+    for(let i=1;i<Math.min(pts.length-1,6);i++){ const A=pts[i], B=pts[i+1], dx=B[0]-A[0], dy=B[1]-A[1], L2=dx*dx+dy*dy; if(L2<1) continue;
+      const t=((p[0]-A[0])*dx+(p[1]-A[1])*dy)/L2; if(t<0||t>1) continue; const q=[A[0]+dx*t,A[1]+dy*t];
+      if(dist(p,q)<15){ cut=i; cp=q; } }
+    if(cut>0){ const rest=pts.slice(cut+1); pts.length=0; pts.push(p,cp,...rest); if(dist(p,cp)<0.5) pts.splice(1,1); } }
   m.preview={pts,names,end:cur};
 }
 function commitRoute(m){
@@ -1181,7 +1188,7 @@ function openLineup(a,id,hn,hd){
 function openCross(a){
   acmKind='cross'; a._crossSel=[]; $('acmT').textContent='Cross Runway: '+a.cs;
   const ids=['03L','03R','21L','21R'];
-  const draw=()=>{ $('acmBody').innerHTML='<div class="hint" style="margin:0 0 6px">Geçilecek pistleri sırasıyla seç. Seçilmeyen pistin önünde uçak durur (hold short).</div>'+
+  const draw=()=>{ $('acmBody').innerHTML='<div class="hint" style="margin:0 0 6px">Geçilecek pistleri sırasıyla seç. Seçilmeyen pistin önünde uçak / araç durur (hold short). Araç pistten çıkarken izin gerekmez..</div>'+
     '<div style="display:flex;gap:6px">'+ids.map(id=>`<button class="btn ${a._crossSel.includes(id)?'pri':''}" data-xr="${id}">RWY ${id}</button>`).join('')+'</div>'+
     `<div class="hint" style="margin-top:8px">Talimat: <b>${crossText(a,a._crossSel)||'—'}</b></div>`;
     document.querySelectorAll('[data-xr]').forEach(b=>b.onclick=()=>{ const id=b.dataset.xr, i=a._crossSel.indexOf(id); if(i>=0) a._crossSel.splice(i,1);
@@ -1241,7 +1248,11 @@ function simStep(dt){
 }
 let SIMX=1, lastIcon=0;   // scenario speed ×1..×4 (traffic only; the clock and weather stay real time)
 function setSimX(x){ SIMX=x; document.querySelectorAll('#mX [data-x]').forEach(b=>b.classList.toggle('on',+b.dataset.x===x)); }
-setInterval(()=>{ const now=performance.now(); let dt=(now-simLast)/1000; simLast=now; dt=Math.min(dt,1); for(let i=0;i<SIMX;i++) simStep(dt); broadcast(); if(now-lastIcon>=100){ lastIcon=now; iconState(); } },33);
+// the sim steps once per drawn frame (smooth on Windows, where 33 ms timers fire unevenly at ~31/47 ms);
+// a slow timer keeps it running while the tab is hidden and frames stop
+function simTick(){ const now=performance.now(); let dt=(now-simLast)/1000; if(dt<0.004) return; simLast=now; dt=Math.min(dt,1); for(let i=0;i<SIMX;i++) simStep(dt); broadcast(); if(now-lastIcon>=100){ lastIcon=now; iconState(); } }
+(function simRAF(){ simTick(); requestAnimationFrame(simRAF); })();
+setInterval(()=>{ if(performance.now()-simLast>120) simTick(); },100);
 // ---------- aircraft external lights (LGT-01..03): one source for pilot + tower ----------
 const LT={TX:1,LD:2,NAV:4,BCN:8,STB:16};
 function lightsOf(a){ if(a.kind!=='ac'||!a.eng||a.mode==='crash') return 0;
@@ -1295,11 +1306,11 @@ function draw(){
   if(s>0.004){
     ctx.fillStyle='#8f9499'; DATA.pavement.forEach(p=>{poly(p);ctx.fill();});
     ctx.fillStyle='#1e2a23'; DATA.holes.forEach(p=>{poly(p);ctx.fill();});
-    { ctx.strokeStyle='#8f9499'; ctx.lineJoin='round'; ctx.lineCap='round'; const EL=(window.EDH&&EDH.on)?EDH.L.edges:EDGES; for(const e of EL){ if(e.kind==='runway') continue; ctx.lineWidth=Math.max((e.kind==='leadin'?16:23)*s,(e.kind==='leadin'?16:23)/60*RWMINPX); line(e.pts); ctx.stroke(); } ctx.lineCap='butt'; }
+    { ctx.strokeStyle='#8f9499'; ctx.lineJoin='round'; ctx.lineCap='round'; const EL=(window.EDH&&EDH.on)?EDH.L.edges:EDGES; for(const e of EL){ if(e.kind==='runway') continue; ctx.lineWidth=Math.max((e.kind==='leadin'?16:23)*1.6*s,(e.kind==='leadin'?16:23)/60*RWMINPX*1.15); line(e.pts); ctx.stroke(); } ctx.lineCap='butt'; }
     ctx.strokeStyle='#8f9499'; ctx.lineCap='butt'; for(const l of (DATA.pave_lines||[])){ line(l.pts); ctx.lineWidth=l.w*s; ctx.stroke(); } ctx.lineCap='round';
     if(DATA.buildings&&s>0.05){ ctx.lineWidth=1; DATA.buildings.forEach(b=>{poly(b.pts);ctx.fillStyle='#4f7fb3';ctx.fill();ctx.strokeStyle='#22405f';ctx.stroke();}); }
     for(const r of DATA.runways){ const a=r.thr[r.ends[0]].xy,b=r.thr[r.ends[1]].xy,L=dist(a,b),n=[-(b[1]-a[1])/L*r.width/2,(b[0]-a[0])/L*r.width/2];
-      const rwPx=Math.max(r.width*s,RWMINPX*r.width/60); ctx.lineCap='butt';
+      const rwPx=Math.max(r.width*1.4*s,RWMINPX*r.width/60); ctx.lineCap='butt';
       ctx.strokeStyle='#8f9499'; ctx.lineWidth=rwPx+4; line([a,b]); ctx.stroke();   // light edge so the runway stands out from the grass
       ctx.strokeStyle='#232627'; ctx.lineWidth=rwPx; line([a,b]); ctx.stroke(); ctx.lineCap='round';
       if(s>0.05){ ctx.strokeStyle='#e8e8e2'; ctx.setLineDash([30*s,20*s]); ctx.lineWidth=Math.max(1,0.9*s); line([a,b]); ctx.stroke(); ctx.setLineDash([]); } }
@@ -1437,7 +1448,7 @@ function renderFMS(){
   document.getElementById('pat').hidden=!(a&&a.kind==='ac'&&a.air); document.getElementById('gaMenu').hidden=!(a&&a.kind==='ac'&&a.air); { const ga=!!(a&&a.ga); const T=document.getElementById('gaT'); T.textContent=ga?'After Go-Around':'Uçuş kontrolü (IAS / ALT / HDG)'; T.style.color=ga?'#ffb547':''; document.getElementById('gaRe').hidden=!ga; }
   if(a&&a.ga){ const g=document.getElementById('gaRwy'); if(!g.dataset.for||g.dataset.for!==a.id){ g.value=a.rwy; g.dataset.for=a.id; } }
   if(!a){ el.innerHTML='<div class="none">Bir uçak seç (strip veya harita).</div>'; document.getElementById('xCode').textContent='----'; return; }
-  if(a.kind==='veh'){ el.innerHTML=`<div class="r1"><span class="box">${a.type}</span></div><div class="cs">${a.cs}</div><div class="st">${a.status}</div>`; document.getElementById('xCode').textContent='----'; return; }
+  if(a.kind==='veh'){ el.innerHTML=`<div class="r1"><span class="box">${a.type}</span><span class="box" id="vSpd">${Math.round(a.ias)} kt</span></div><div class="cs">${a.cs}</div><div class="st">${a.status}</div>`; document.getElementById('xCode').textContent='----'; return; }
   el.innerHTML=`<div class="r1"><span class="box">${a.type}</span><span class="box tg ${a.rules==='I'?'on':''}" data-r="I">I</span><span class="box tg ${a.rules==='V'?'on':''}" data-r="V">V</span><span class="box">${a.perf.w}</span><span class="box" style="margin-left:auto">${a.air?'AIR':'GND'}</span></div>
     <div class="cs">${a.cs}</div>
     <div class="grid"><span class="box">${a.ssr}</span><select id="fRwy">${ENDS.map(e=>`<option ${e===a.rwy?'selected':''}>${e}</option>`).join('')}</select><span class="box">${a.adep||'----'}</span><span class="box">${a.ades||'----'}</span></div>
@@ -1506,7 +1517,19 @@ function moveIcon(from,to){ const o=iconOrder(), i=o.indexOf(from); o.splice(i,1
   buildIcons(); }
 document.querySelectorAll('.xpdr button').forEach(b=>b.onclick=()=>{ const a=SEL; if(!a||a.kind!=='ac') return; if(b.dataset.x==='IDENT') a.ident=Date.now()+18000; else a.xpdr=b.dataset.x; renderFMS(); });
 const pfd=document.getElementById('pfd'), pc=pfd.getContext('2d');
+// vehicle speedometer (kt and km/h) in place of the PFD
+function drawVehSpd(v){ const w=pfd.width,h=pfd.height, cx=w/2, cy=h*0.62, r=Math.min(w,h)*0.42, mx=Math.max(40,Math.ceil((v.taxiSpd||taxiDef(v))*1.5/10)*10);
+  pc.fillStyle='#000'; pc.fillRect(0,0,w,h); const A0=Math.PI*0.8, A1=Math.PI*2.2, ang=x=>A0+(A1-A0)*clamp(x/mx,0,1);
+  pc.lineWidth=8; pc.strokeStyle='#26323f'; pc.beginPath(); pc.arc(cx,cy,r,A0,A1); pc.stroke();
+  pc.strokeStyle='#22c55e'; pc.beginPath(); pc.arc(cx,cy,r,A0,ang(v.ias)); pc.stroke();
+  pc.fillStyle='#9fb0c2'; pc.font='10px monospace'; pc.textAlign='center';
+  for(let k=0;k<=mx;k+=mx/4){ const t=ang(k); pc.fillText(Math.round(k),cx+Math.cos(t)*(r-18),cy+Math.sin(t)*(r-18)+4); }
+  const t=ang(v.ias); pc.strokeStyle='#fff'; pc.lineWidth=3; pc.beginPath(); pc.moveTo(cx,cy); pc.lineTo(cx+Math.cos(t)*(r-6),cy+Math.sin(t)*(r-6)); pc.stroke();
+  pc.fillStyle='#fff'; pc.font='bold 26px monospace'; pc.fillText(Math.round(v.ias)+' kt',cx,cy+r*0.55);
+  pc.font='12px monospace'; pc.fillStyle='#9fb0c2'; pc.fillText(Math.round(v.ias*1.852)+' km/h · hedef '+Math.round(v.taxiSpd||taxiDef(v))+' kt',cx,cy+r*0.55+18);
+  pc.font='bold 11px system-ui'; pc.fillStyle='#ffd24a'; pc.fillText(v.cs+' · ARAÇ HIZI',cx,16); pc.textAlign='left'; }
 function drawPFD(){
+  if(SEL&&SEL.kind==='veh'){ drawVehSpd(SEL); const e=document.getElementById('vSpd'); if(e) e.textContent=Math.round(SEL.ias)+' kt'; requestAnimationFrame(drawPFD); return; }
   const a=SEL&&SEL.kind==='ac'?SEL:null, w=pfd.width,h=pfd.height;
   pc.fillStyle='#000'; pc.fillRect(0,0,w,h);
   const gnd=!a||!a.air; const pitch=gnd?0:clamp((a.vs||0)/Math.max(60,(a.gs||a.ias||60))/101.27*57.3,-15,20), bank=gnd?0:clamp((a.turn||0)*8,-30,30);
@@ -1740,7 +1763,7 @@ setInterval(()=>{ WX.tick(1);
 let bc=null; try{ bc=new BroadcastChannel('twrsim'); }catch(e){}
 let lastB=0;
 let lastWxB=0;
-function broadcast(force){ const now=Date.now(); if(!force&&now-lastB<90) return; lastB=now;
+function broadcast(force){ const now=Date.now(); if(!force&&now-lastB<50) return; lastB=now;
   const msg={t:'state',wx:{inp:WX.inp,cur:WX.cur,hist:WX.hist.slice(-600),active:activeRwy},
     sb:Object.keys(SBOFF), traffic:TR.map(a=>{ let v=[0,0],vz=0; if(a._bp){ const dt=(now-a._bt)/1000; if(dt>0.02){ v=[(a.pos[0]-a._bp[0])/dt,(a.pos[1]-a._bp[1])/dt]; vz=(a.alt-a._ba)/dt; } }
       a._bp=a.pos.slice(); a._ba=a.alt; a._bt=now;
