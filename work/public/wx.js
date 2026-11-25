@@ -87,11 +87,12 @@ const AWOS = (()=>{
   }
   const row=(a,b,c,cls)=>`<tr${cls?` class="${cls}"`:''}><td>${a}</td><td>${b}</td><td>${c}</td></tr>`;
   const sp=v=>v==null?'---':String(v).padStart(3,'0'), dg=v=>v==null?'---°':pad3(v)+'°';
+  const dg10=v=>v==null?'---°':pad3((Math.round(v/10)*10)%360||360)+'°';   // wind direction as given to aircraft: nearest 10°
   function card(end,qfu,elevEnd,w){
     const s2=WXM.stats(w.hist,120)||{}, s10=WXM.stats(w.hist,600)||{}, f=WXM.qfe(w.inp.QNH,elevEnd);
     return `<div class="aw-card"><div class="aw-rn">${end}</div>${dial(qfu,w.inp,w.cur)}
-      <table>${row("2' MIN",sp(s2.min),dg(s2.dMin))}${row("2' AVE",sp(s2.ave),dg(s2.dAve))}${row("2' MAX",sp(s2.max),dg(s2.dMax))}</table>
-      <table>${row("10' MIN",sp(s10.min),dg(s10.dMin))}${row("10' AVE",sp(s10.ave),dg(s10.dAve))}${row("10' MAX",sp(s10.max),dg(s10.dMax))}</table>
+      <table>${row("2' MIN",sp(s2.min),dg10(s2.dMin))}${row("2' AVE",sp(s2.ave),dg10(s2.dAve))}${row("2' MAX",sp(s2.max),dg10(s2.dMax))}</table>
+      <table>${row("10' MIN",sp(s10.min),dg10(s10.dMin))}${row("10' AVE",sp(s10.ave),dg10(s10.dAve))}${row("10' MAX",sp(s10.max),dg10(s10.dMax))}</table>
       <table>${row('QFE',f.toFixed(1),'hPa')}${row('QFE',WXM.inHg(f).toFixed(2),'inHg')}</table></div>`;
   }
   function met(w,elev){

@@ -13,6 +13,16 @@
   /* ---------- left AWOS panel ---------- */
   #side { width:372px; flex:none; height:100%; overflow-y:auto; background:var(--side); border-right:1px solid var(--line); padding:12px 12px 24px; }
   #side.hide { display:none; }
+  #side { position:relative; min-width:260px; max-width:70vw; }
+  #side.left { order:0; border-left:0; border-right:1px solid var(--line); }
+  #grip { position:absolute; top:0; bottom:0; left:-4px; width:8px; cursor:ew-resize; z-index:5; }
+  #grip:hover, #grip.drag { background:rgba(120,170,255,.35); }
+  #side.left #grip { left:auto; right:-4px; }
+  .awos .aw-dial { max-width:none; }
+  .awtools { display:flex; gap:6px; margin:-2px 0 8px; }
+  .awtools button { flex:1; background:#1c2733; color:var(--txt); border:1px solid #2d3b4c; border-radius:6px; padding:5px 6px; font-size:12px; cursor:pointer; }
+  .awtools button:hover { background:#253446; }
+  #awPop { display:none; }
   #side { order:2; border-right:0; border-left:1px solid var(--line); }
   .awos .aw-card { padding:3px 4px 4px; }
   .awos .aw table { font-size:10.5px; }
@@ -84,7 +94,7 @@
 </head>
 <body>
 <div id="app">
-<aside id="side">
+<aside id="side"><div id="grip" title="Sürükleyerek genişlet / daralt"></div>
   <div class="hdr"><h1>LTAC TWR</h1><span class="me">ATC</span></div>
 
   <h2>AKTİF PİST</h2>
@@ -92,7 +102,9 @@
   <p class="note" id="rwyHint"></p>
 
   <h2>AWOS / ATIS</h2>
-  <div class="awos aw">
+  <div class="awtools"><button id="awSide" title="Paneli ekranın diğer tarafına al">⇄ Sola / sağa al</button><button id="awOut" title="AWOS'u ayrı pencerede aç (ikinci ekrana sürükleyebilirsin)">⧉ Ayrı pencere</button></div>
+  <p class="note" id="awPop">AWOS ayrı pencerede açık. Geri almak için o pencereyi kapat.</p>
+  <div class="awos aw" id="awBox">
     <div class="clock" id="clock">--:--:-- UTC</div>
     <div class="dials" id="dials"></div>
     <div class="met" id="met"></div>
@@ -518,11 +530,12 @@ const AWOS = (()=>{
   }
   const row=(a,b,c,cls)=>`<tr${cls?` class="${cls}"`:''}><td>${a}</td><td>${b}</td><td>${c}</td></tr>`;
   const sp=v=>v==null?'---':String(v).padStart(3,'0'), dg=v=>v==null?'---°':pad3(v)+'°';
+  const dg10=v=>v==null?'---°':pad3((Math.round(v/10)*10)%360||360)+'°';   // wind direction as given to aircraft: nearest 10°
   function card(end,qfu,elevEnd,w){
     const s2=WXM.stats(w.hist,120)||{}, s10=WXM.stats(w.hist,600)||{}, f=WXM.qfe(w.inp.QNH,elevEnd);
     return `<div class="aw-card"><div class="aw-rn">${end}</div>${dial(qfu,w.inp,w.cur)}
-      <table>${row("2' MIN",sp(s2.min),dg(s2.dMin))}${row("2' AVE",sp(s2.ave),dg(s2.dAve))}${row("2' MAX",sp(s2.max),dg(s2.dMax))}</table>
-      <table>${row("10' MIN",sp(s10.min),dg(s10.dMin))}${row("10' AVE",sp(s10.ave),dg(s10.dAve))}${row("10' MAX",sp(s10.max),dg(s10.dMax))}</table>
+      <table>${row("2' MIN",sp(s2.min),dg10(s2.dMin))}${row("2' AVE",sp(s2.ave),dg10(s2.dAve))}${row("2' MAX",sp(s2.max),dg10(s2.dMax))}</table>
+      <table>${row("10' MIN",sp(s10.min),dg10(s10.dMin))}${row("10' AVE",sp(s10.ave),dg10(s10.dAve))}${row("10' MAX",sp(s10.max),dg10(s10.dMax))}</table>
       <table>${row('QFE',f.toFixed(1),'hPa')}${row('QFE',WXM.inHg(f).toFixed(2),'inHg')}</table></div>`;
   }
   function met(w,elev){
@@ -657,7 +670,8 @@ for(let i=0;i<5;i++) WXL.tick(1);
 let active=null;
 function headwind(end){ const c=wxNow().cur; return c.spd*Math.cos((c.dir-ENDS[end].qfu)*Math.PI/180); }
 function suggested(){ return headwind('03R')>=0 ? '03' : '21'; }
-const _html={}; function setHTML(id,h){ if(_html[id]===h) return; _html[id]=h; document.getElementById(id).innerHTML=h; }   // skip unchanged rebuilds (each one re-lays out the side panel)
+let AWWIN=null; const awDoc=()=>AWWIN&&!AWWIN.closed?AWWIN.document:document;
+const _html={}; function setHTML(id,h){ if(_html[id]===h) return; const el=(id==='dials'||id==='met'?awDoc():document).getElementById(id); if(!el) return; _html[id]=h; el.innerHTML=h; }   // skip unchanged rebuilds (each one re-lays out the side panel)
 function renderAWOS(){
   const dir=active.slice(0,2), ends=[dir+'L',dir+'R'], w=wxNow();
   setHTML('dials',ends.map(e=>AWOS.card(e,ENDS[e].qfu,ENDS[e].elev_ft,w)).join(''));
@@ -670,10 +684,37 @@ function renderAWOS(){
   const box=document.getElementById('rwys');
   ['03L','03R','21L','21R'].forEach(r=>{ const b=document.createElement('button'); b.textContent=r; b.dataset.r=r; b.onclick=()=>{ active=r; renderAWOS(); }; box.appendChild(b); });
   active=suggested()+'R'; renderAWOS();
-  const clk=document.getElementById('clock');
-  const tick=()=>{ clk.textContent=AWOS.clock(); if(Date.now()-WXR_t>4000) WXL.tick(1); renderAWOS(); };
+  const tick=()=>{ const clk=awDoc().getElementById('clock'); if(clk) clk.textContent=AWOS.clock(); if(AWWIN&&AWWIN.closed) awBack(); if(Date.now()-WXR_t>4000) WXL.tick(1); renderAWOS(); };
   tick(); setInterval(tick,1000);
 }
+
+// ===================== AWOS panel layout: width, side, separate window (remembered in this browser) =====================
+function togLbl(){ const h=document.getElementById('side').classList.contains('hide'), L=!!(typeof AWL!=='undefined'&&AWL&&AWL.left); return (h!==L)?'◀ AWOS':'AWOS ▶'; }
+var AWL=(()=>{ try{ return JSON.parse(localStorage.getItem('twrsim.awos')||'{}'); }catch(e){ return {}; } })();
+const awSave=()=>{ try{ localStorage.setItem('twrsim.awos',JSON.stringify(AWL)); }catch(e){} };
+{ const side=document.getElementById('side'), grip=document.getElementById('grip');
+  const apply=()=>{ side.classList.toggle('left',!!AWL.left); if(AWL.w) side.style.width=AWL.w+'px';
+    const t=document.getElementById('toggle'); t.style.left=AWL.left?'auto':''; t.style.right=AWL.left?'12px':''; t.textContent=togLbl(); dispatchEvent(new Event('resize')); };
+  apply();
+  document.getElementById('awSide').onclick=()=>{ AWL.left=!AWL.left; awSave(); apply(); };
+  grip.addEventListener('pointerdown',e=>{ e.preventDefault(); grip.setPointerCapture(e.pointerId); grip.classList.add('drag');
+    const x0=e.clientX, w0=side.getBoundingClientRect().width;
+    const mv=ev=>{ const dx=ev.clientX-x0, w=Math.round(Math.max(260,Math.min(innerWidth*0.7,w0+(AWL.left?dx:-dx)))); side.style.width=w+'px'; AWL.w=w; dispatchEvent(new Event('resize')); };
+    const up=()=>{ grip.classList.remove('drag'); grip.removeEventListener('pointermove',mv); grip.removeEventListener('pointerup',up); awSave(); };
+    grip.addEventListener('pointermove',mv); grip.addEventListener('pointerup',up); });
+  grip.addEventListener('dblclick',()=>{ delete AWL.w; side.style.width=''; awSave(); dispatchEvent(new Event('resize')); }); }
+function awBack(){ AWWIN=null; for(const k in _html) delete _html[k]; document.getElementById('awBox').style.display=''; document.getElementById('awPop').style.display=''; renderAWOS(); }
+document.getElementById('awOut').onclick=()=>{
+  if(AWWIN&&!AWWIN.closed){ AWWIN.focus(); return; }
+  const w=window.open('','twrAwos','width=560,height=820'); if(!w){ alert('Tarayıcı açılır pencereyi engelledi. Adres çubuğundan bu siteye açılır pencere izni ver.'); return; }
+  const css=[...document.querySelectorAll('style')].map(x=>x.textContent).join('\n');
+  w.document.open(); w.document.write(`<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>LTAC AWOS</title><style>${css}
+    html,body{height:auto;overflow:auto} body{background:var(--side);margin:0;padding:10px}
+    .awos .aw-dial{max-width:none} .clock{font-size:clamp(28px,6vw,64px)} .awos .aw table,.aw table{font-size:clamp(10.5px,2.1vw,20px)} .aw td{height:auto}</style></head>
+    <body><div class="awos aw"><div class="clock" id="clock">--:--:-- UTC</div><div class="dials" id="dials"></div><div class="met" id="met"></div></div></body></html>`); w.document.close();
+  AWWIN=w; for(const k in _html) delete _html[k]; document.getElementById('awBox').style.display='none'; document.getElementById('awPop').style.display='block'; renderAWOS();
+  w.addEventListener('beforeunload',()=>setTimeout(awBack,0)); };
+addEventListener('beforeunload',()=>{ try{ if(AWWIN&&!AWWIN.closed) AWWIN.close(); }catch(e){} });
 
 // ===================== settings (remembered in this browser) =====================
 const SET={ h:400, turn:1, zoomS:1 };
@@ -697,7 +738,7 @@ NET.start({role:'atc', ui:{fstate, ptt, tel, who:document.getElementById('whoLis
   onState:(st,from)=>{ if(st&&st.wx) applyRemote(st.wx); if(st&&st.sb) window.__sb=st.sb; if(st&&st.wxc) remoteCur(st.wxc); window.__traffic=window.__traffic||{}; if(st&&st.traffic){ if(Array.isArray(st.traffic)) window.__traffic[from||'p']=st.traffic; else Object.assign(window.__traffic,st.traffic); } }, toast:m=>{ const h=document.getElementById('help'); h.textContent=m; h.style.color='#ffb4b4'; setTimeout(()=>{ h.style.color=''; },4000); } });
 
 document.getElementById('toggle').onclick=()=>{ const s=document.getElementById('side'); s.classList.toggle('hide');
-  document.getElementById('toggle').textContent=s.classList.contains('hide')?'◀ AWOS':'AWOS ▶'; dispatchEvent(new Event('resize')); };
+  document.getElementById('toggle').textContent=togLbl(); dispatchEvent(new Event('resize')); };
 
 // ===================== 3D tower view =====================
 (function(){
