@@ -174,10 +174,11 @@ for(let i=0;i<5;i++) WXL.tick(1);
 let active=null;
 function headwind(end){ const c=wxNow().cur; return c.spd*Math.cos((c.dir-ENDS[end].qfu)*Math.PI/180); }
 function suggested(){ return headwind('03R')>=0 ? '03' : '21'; }
+const _html={}; function setHTML(id,h){ if(_html[id]===h) return; _html[id]=h; document.getElementById(id).innerHTML=h; }   // skip unchanged rebuilds (each one re-lays out the side panel)
 function renderAWOS(){
   const dir=active.slice(0,2), ends=[dir+'L',dir+'R'], w=wxNow();
-  document.getElementById('dials').innerHTML=ends.map(e=>AWOS.card(e,ENDS[e].qfu,ENDS[e].elev_ft,w)).join('');
-  const [ml,mr]=AWOS.met(w,DATA.elev_ft); document.getElementById('met').innerHTML=ml+mr;
+  setHTML('dials',ends.map(e=>AWOS.card(e,ENDS[e].qfu,ENDS[e].elev_ft,w)).join(''));
+  const [ml,mr]=AWOS.met(w,DATA.elev_ft); setHTML('met',ml+mr);
   document.querySelectorAll('#rwys button').forEach(b=>b.classList.toggle('on',b.dataset.r===active));
   const c=w.cur, hw=headwind(active), xw=Math.abs(c.spd*Math.sin((c.dir-ENDS[active].qfu)*Math.PI/180));
   document.getElementById('rwyHint').textContent=`Rüzgâra göre öneri: ${suggested()} yönü (karar senin). RWY ${active}: karşı rüzgâr ${fmt(hw,0)} kt, yan rüzgâr ${fmt(xw,0)} kt.`;
@@ -519,20 +520,28 @@ function makeVehicle(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.4,2.4,6),
 const objs=new Map(); window.__objs=objs;
 const TRAFFIC_SCALE=2.0, VEH_SCALE=3.5, BUS_SCALE=3.0, VEHLEN={'Fire truck':12,'Police':4.6,'Ambulance':6.5,'Follow-me':5.2,'Passenger bus':13.8,'Catering truck':9};
 let lastTF=0;
+const INTERP_MS=150, CLK={off:0,s:[]};
+function clkSample(d){ const n=Date.now(); CLK.s.push([n,d]); while(CLK.s.length&&n-CLK.s[0][0]>5000) CLK.s.shift(); let m=Infinity; for(const q of CLK.s) if(q[1]<m) m=q[1]; CLK.off=m; }
 function trafficFrame(now){
   const T=window.__traffic||{}, seen=new Set(), dt=Math.min(0.2,lastTF?(now-lastTF)/1000:0.016); lastTF=now;
   const k=1-Math.exp(-dt*9), kh=1-Math.exp(-dt*7);
-  for(const list of Object.values(T)) for(const a of (list||[])){
+  // one sample stream per aircraft: the same traffic can arrive both from this browser and over the network
+  const best=new Map(); for(const list of Object.values(T)) for(const a of (list||[])){ const b=best.get(a.id); if(!b||(a.ts||0)>(b.ts||0)) best.set(a.id,a); }
+  const wall=performance.timeOrigin+now;   // wall-clock time of this frame
+  for(const a of best.values()){
     seen.add(a.id); let o=objs.get(a.id);
-    if(!o||o.type!==a.type){ if(o) scene.remove(o.g); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),key:null,type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
-    const key=a.pos[0]+','+a.pos[1]+','+a.hdg+','+a.alt;
-    if(o.key!==key){ // a new sample arrived
-      if(!a.v&&o.p){ const d=(now-o.t)/1000; if(d>0.05) o.v=[(a.pos[0]-o.p[0])/d,(a.pos[1]-o.p[1])/d]; }
-      else o.v=a.v||[0,0];
-      o.vz=a.vz||0; o.p=a.pos.slice(); o.alt=a.alt; o.t=now; o.key=key; }
-    const ex=Math.min(0.6,(now-o.t)/1000), tx=o.p[0]+(o.v?o.v[0]:0)*ex, ty=o.p[1]+(o.v?o.v[1]:0)*ex, ta=o.alt+(o.vz||0)*ex;
-    if(!o.r||o.rep!==(a.rep||0)||Math.hypot(tx-o.r[0],ty-o.r[1])>300){ o.rep=a.rep||0; o.r=[tx,ty]; o.ra=ta; o.rh=a.hdg; }
-    else { o.r[0]+=(tx-o.r[0])*k; o.r[1]+=(ty-o.r[1])*k; o.ra+=(ta-o.ra)*k; o.rh+=(((a.hdg-o.rh)%360+540)%360-180)*kh; }
+    if(!o||o.type!==a.type){ if(o) scene.remove(o.g); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),buf:[],type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
+    const ts=a.ts||null, key=ts||(a.pos[0]+','+a.pos[1]+','+a.hdg+','+a.alt);
+    if(o.key!==key){ o.key=key; const sts=ts||wall; clkSample(wall-sts);
+      const s={ts:sts,p:a.pos.slice(),alt:a.alt,h:a.hdg,v:a.v||[0,0],vz:a.vz||0}, L=o.buf[o.buf.length-1];
+      if(o.rep!==(a.rep||0)||!L||Math.hypot(s.p[0]-L.p[0],s.p[1]-L.p[1])>300){ o.rep=a.rep||0; o.buf=[s]; o.r=null; }
+      else if(s.ts>L.ts){ o.buf.push(s); if(o.buf.length>12) o.buf.shift(); } }
+    // render a little in the past and interpolate between the two samples around that moment (smooth on any network)
+    const rt=wall-CLK.off-INTERP_MS, B=o.buf; let x,y,al,hd;
+    let i=B.length-1; while(i>0&&B[i].ts>rt) i--;
+    if(i===B.length-1||B[i].ts>rt){ const s=B[i], ex=Math.max(0,Math.min(0.5,(rt-s.ts)/1000)); x=s.p[0]+s.v[0]*ex; y=s.p[1]+s.v[1]*ex; al=s.alt+s.vz*ex; hd=s.h; }
+    else { const s=B[i], n=B[i+1], f=(rt-s.ts)/Math.max(1,n.ts-s.ts); x=s.p[0]+(n.p[0]-s.p[0])*f; y=s.p[1]+(n.p[1]-s.p[1])*f; al=s.alt+(n.alt-s.alt)*f; hd=s.h+((((n.h-s.h)%360)+540)%360-180)*f; }
+    if(!o.r){ o.r=[x,y]; o.ra=al; o.rh=hd; } else { o.r[0]=x; o.r[1]=y; o.ra=al; o.rh=hd; }
     const h=a.kind==='veh'?0:Math.max(0,(o.ra-DATA.elev_ft)*0.3048);
     MODELS.animate(o.g,now/1000,{eng:a.kind==='ac'&&a.eng!==false,ias:a.ias});
     { const ud=o.g.userData; if(ud&&ud.gear&&!ud.gearFixed){ const k=typeof a.gear==='number'?a.gear:(a.gear===false?0:1), H=(ud.spec.gear.h||1)+(ud.spec.gear.wr||0.3)*2; ud.gear.visible=k>0.03; ud.gear.scale.y=Math.max(0.03,k); ud.gear.position.y=(1-k)*H; } }  // gear extends/retracts in step with the pilot screen

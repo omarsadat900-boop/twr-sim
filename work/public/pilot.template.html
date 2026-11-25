@@ -97,7 +97,9 @@
   .ov{position:absolute;z-index:3}
   #scale{right:10px;bottom:10px;font:12px ui-monospace,Menlo,monospace;color:#dfe6ec;background:rgba(0,0,0,.35);padding:3px 7px;border-radius:6px}
   #maphint{left:10px;bottom:10px;font-size:11px;color:#c8d3c8;background:rgba(0,0,0,.35);padding:4px 8px;border-radius:6px;pointer-events:none}
-  #mode{left:50%;top:10px;transform:translateX(-50%);background:#0c1729ee;border:1px solid var(--line2);border-radius:10px;padding:8px 10px;display:flex;gap:8px;align-items:center;font-size:13px;max-width:calc(100% - 40px)}
+  #mode{left:50%;top:10px;transform:translateX(-50%);background:#0c1729ee;border:1px solid var(--line2);border-radius:10px;padding:8px 10px;display:flex;gap:8px;align-items:center;font-size:13px;max-width:calc(100% - 40px);flex-wrap:wrap;width:max-content}
+  #mode>span{flex:1 1 100%}
+  #mode button,#mode select{white-space:nowrap}
   #mode button{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:5px 10px;cursor:pointer}
   #mode button.go{background:var(--ok);border-color:var(--ok);color:#fff}
   #toast{left:50%;bottom:44px;transform:translateX(-50%);background:#0c1729ee;border:1px solid var(--line2);border-radius:10px;padding:8px 12px;font-size:13px;pointer-events:none;transition:opacity .3s} #toast.alert{background:#7a1010f0;border-color:#ff5a5a;font-weight:700;font-size:15px}
@@ -369,10 +371,10 @@ EDGES.forEach((e,i)=>{ ADJ[e.a].push({e:i,o:e.b}); ADJ[e.b].push({e:i,o:e.a}); }
 const onRunway=n=>ADJ[n].some(x=>EDGES[x.e].kind==='runway');
 function dijkstra(src,dst,veh){
   const N=NODES.length, D=new Float64Array(N).fill(Infinity), P=new Int32Array(N).fill(-1), PE=new Int32Array(N).fill(-1), done=new Uint8Array(N);
-  D[src]=0;
+  D[src]=0; const rr=onRunway(src)&&onRunway(dst);
   for(;;){ let u=-1,bd=Infinity; for(let i=0;i<N;i++) if(!done[i]&&D[i]<bd){bd=D[i];u=i;} if(u<0||u===dst) break; done[u]=1;
     for(const {e,o} of ADJ[u]){ const E=EDGES[e]; let w=E.len;
-      if(E.kind==='runway') w*=6;                         // only cross/backtrack a runway when picked
+      if(E.kind==='runway'&&!rr) w*=6;                    // only cross/backtrack a runway when picked; runway→runway picks run straight along it
       if(E.kind==='leadin' && NODES[o].stand && o!==dst) w+=1e6;   // never route through a stand
       if(D[u]+w<D[o]){D[o]=D[u]+w;P[o]=u;PE[o]=e;} } }
   if(D[dst]===Infinity) return null;
@@ -552,7 +554,7 @@ function endPath(a){
 // ======================================================================
 function windAt(){ return WX.cur; }
 function stepAir(a,dt){
-  nav(a,dt);
+  nav(a,dt); if(a.seq!=null) seqStep(a);
   // heading
   const d=norm180(a.tgt.hdg-a.hdg), rate=a.perf.rate||3;
   let turn=a.forceTurn? a.forceTurn*rate : clamp(d,-rate,rate)/1;
@@ -577,7 +579,7 @@ function nav(a,dt){
   switch(a.nav){
     case 'hdg': break;
     case 'orbit': { a.forceTurn=a.orbit.dir; a.orbit.left-=Math.abs(a.turn||3)*dt; a.tgt.hdg=norm360(a.hdg+a.orbit.dir*90);
-      if(a.orbit.left<=0){ a.nav='hdg'; a.tgt.hdg=a.orbit.h0; a.status='Orbit tamam'; renderStrips(); } break; }
+      if(a.orbit.left<=0){ if(a.orbit.cir){ a.nav='circuit'; a.cir=a.orbit.cir; if(a.cir.leg==='downwind') a.cir.leg='join'; a.status='Orbit tamam · Downwind '+a.cir.end+' devam'; } else { a.nav='hdg'; a.tgt.hdg=a.orbit.h0; a.status='Orbit tamam'; } renderStrips(); renderFMS(); } break; }
     case 'hold': { const H=a.hold; H.t+=dt;
       if(H.ph===0){ a.forceTurn=1; a.tgt.hdg=norm360(a.hdg+90); if(Math.abs(norm180(a.hdg-(H.inb+180)))<4){H.ph=1;H.t=0;} }
       else if(H.ph===1){ a.tgt.hdg=norm360(H.inb+180); if(H.t>60){H.ph=2;} }
@@ -591,6 +593,7 @@ function nav(a,dt){
     case 'straight': straight(a,dt); break;
   }
 }
+const RWMINPX=26;   // minimum drawn runway width (px, for a 60 m runway); taxiways keep the same 23:60 ratio
 const DECISION=0.5*NM;   // LDG-05: auto go-around point without landing clearance (~150 ft)
 function approach(a,dt){
   const {R,along,xt}=rwyFrame(a,a.app.end);
@@ -598,7 +601,7 @@ function approach(a,dt){
   if(!a.app.est){
     a.tgt.spd=Math.min(a.tgt.spd,a.perf.w==='L'?90:190);
     if(a.app.ph==='pos'){ const P=[R.thr[0]-R.u[0]*a.app.fd,R.thr[1]-R.u[1]*a.app.fd]; if(steerTo(a,P)<1500) a.app.ph='turn'; return; }
-    if(a.app.ph==='turn'){ a.tgt.hdg=R.qfu; a.forceTurn=Math.sign(norm180(R.qfu-a.hdg))||1; if(hd<60) a.app.ph='int'; else return; }
+    if(a.app.ph==='turn'){ a.tgt.hdg=R.qfu; a.forceTurn=a.app.dir||Math.sign(norm180(R.qfu-a.hdg))||1; if(hd<60) a.app.ph='int'; else return; }
     if(along<2.5*NM && !a.app.visual){ a.app.ph='pos'; a.app.fd=12*NM; return; }
     if(along<(a.app.short?0.12:0.5)*NM){ goAround(a,'Finali yakalayamadı'); return; }
     a.tgt.hdg=norm360(R.qfu-clamp(xt/40,-45,45));   // steer toward the centreline
@@ -623,7 +626,7 @@ const patSpd=a=>a.perf.w==='L'?a.perf.vapp+20:Math.min(210,a.perf.vapp+45);
 function patP(E,hand,al,off){ const R=RW[E], sd=patSide(E,hand); return [R.thr[0]+R.u[0]*al+sd[0]*off,R.thr[1]+R.u[1]*al+sd[1]*off]; }
 function patLegs(E,hand,w){ const R=RW[E], D=patDims(w), P=(al,o)=>patP(E,hand,al,o);
   return { dep:[P(0,0),P(R.len+D.C,0)], up:[P(0,-0.25*NM),P(R.len,-0.25*NM)], cw:[P(R.len+D.C,0),P(R.len+D.C,D.W)],
-    dw:[P(R.len+D.C,D.W),P(-D.B,D.W)], base:[P(-D.B,D.W),P(-D.B,0)], fin:[P(-D.B,0),P(0,0)] }; }
+    dw:[P(R.len+D.C,D.W),P(-5*NM,D.W)], base:[P(-D.B,D.W),P(-D.B,0)], fin:[P(-5*NM,0),P(0,0)] }; }
 function flyLine(a,P0,h){ const v=[a.pos[0]-P0[0],a.pos[1]-P0[1]], r=hv(h+90), e=v[0]*r[0]+v[1]*r[1]; a.tgt.hdg=norm360(h-clamp(e*0.04,-35,35)); return e; }
 const turnLead=a=>{ const v=(a.gs||a.ias)*KT, w=(a.perf.rate||3)*D2R; return v/w; };
 // fly toward a straight line through P0 with heading h, cutting in at most maxCut degrees and easing onto it (no overshoot)
@@ -678,23 +681,28 @@ function patCmd(k){ const a=SEL; if(!a||a.kind!=='ac'||!a.air){ toast('Havadaki 
     if(turned){ toast('Unable to cancel base leg. Aircraft has already initiated the base turn.',4000); return; }
     if(!C||!C.baseReq){ toast('İptal edilecek bir Turn Base talimatı yok.'); return; }
     C.baseReq=false; a.status=`Downwind ${C.end} (base iptal, downwind devam)`; }
-  if(k==='final'){ if(!C||C.leg==='entry'||C.leg==='join'||C.leg==='downwind'){ toast('Turn Final için önce Turn Base verilmeli ve base dönüşü tamamlanmalı.'); return; }
+  if(k==='final'&&(!C||!['baseturn','base','finalturn'].includes(C.leg))){ // turn final from anywhere (downwind, entry, upwind, outside the circuit)
+    const E=C?C.end:(a.rwy&&RW[a.rwy]?a.rwy:activeRwy), R=RW[E], v=[a.pos[0]-R.thr[0],a.pos[1]-R.thr[1]], side=v[0]*R.u[1]-v[1]*R.u[0];
+    a.climbLd=false; a.si=null; a.cir=null; a.rwy=E; a.nav='app'; a.app={end:E,est:false,visual:true,ph:'turn',fd:0,fromPat:true,dir:Math.abs(norm180(a.hdg-R.qfu))>100?(side<0?-1:1):0};
+    if(a.perf.gear) a.gearDown=true; a.status='Final '+E+' (direkt)'+(a.ldg?' · iniş izni':''); toast(`${a.cs} turn final RWY ${E}`); renderStrips(); renderFMS(); return; }
+  if(k==='final'){
     if(C.finalReq){ toast('Turn Final zaten verildi.'); return; } C.finalReq=true; a.status=`Base ${C.end} · turn final`; }
   renderStrips(); renderFMS(); }
 // ---------- straight-in (APP-06): 10 NM point on the centreline, then 5 NM, then final ----------
-function straightIn(a,E){ if(!a||a.kind!=='ac'||!a.air){ toast('Havadaki bir uçak seç.'); return; } a.climbLd=false;
-  a.rwy=E; a.app=null; a.ldg=false; a.nav='straight'; a.si={end:E,ph:'to10'}; a.status='Straight-in '+E+' · 10 NM noktasına'; renderStrips(); renderFMS(); }
+function straightIn(a,E,dNM){ if(!a||a.kind!=='ac'||!a.air){ toast('Havadaki bir uçak seç.'); return; } a.climbLd=false;
+  a.rwy=E; a.app=null; a.ldg=false; a.nav='straight'; a.si={end:E,ph:'to10',d:dNM||10}; a.status='Straight-in '+E+' · '+(dNM||10)+' NM noktasına'; renderStrips(); renderFMS(); }
 function straight(a,dt){ const S_=a.si, {R,along,xt}=rwyFrame(a,S_.end), hd=Math.abs(norm180(a.hdg-R.qfu));
-  if(S_.ph==='to10'){ a.tgt.alt=R.elev+3000; a.tgt.spd=Math.min(a.tgt.spd||210,a.perf.w==='L'?a.perf.vapp+30:210);
+  const dN=S_.d||10;
+  if(S_.ph==='to10'){ a.tgt.alt=R.elev+Math.max(1600,dN*318); a.tgt.spd=Math.min(a.tgt.spd||210,a.perf.w==='L'?a.perf.vapp+30:210);
     if(along>0.8*NM&&along<=4.5*NM&&Math.abs(xt)<400&&hd<30){ S_.ph='to5'; return; }   // already inside 5 NM and aligned: straight to final
-    if(along>4.5*NM&&along<10.5*NM&&Math.abs(xt)<400&&hd<30){ S_.ph='to5'; a.status='Straight-in '+S_.end+' · hizalandı, 5 NM noktasına'; renderStrips(); renderFMS(); return; }
-    const P10=[R.thr[0]-R.u[0]*10*NM,R.thr[1]-R.u[1]*10*NM]; if(steerTo(a,P10)<turnLead(a)+300){ S_.ph='to5'; a.status='Straight-in '+S_.end+' · 10 NM, 5 NM noktasına'; renderStrips(); renderFMS(); } return; }
+    if(along>4.5*NM&&along<dN*NM+0.5*NM&&Math.abs(xt)<400&&hd<30){ S_.ph='to5'; a.status='Straight-in '+S_.end+' · hizalandı, 5 NM noktasına'; renderStrips(); renderFMS(); return; }
+    const P10=[R.thr[0]-R.u[0]*dN*NM,R.thr[1]-R.u[1]*dN*NM]; if(steerTo(a,P10)<turnLead(a)+300){ S_.ph='to5'; a.status='Straight-in '+S_.end+' · '+dN+' NM, final'; renderStrips(); renderFMS(); } return; }
   if(S_.ph==='to5'){ a.tgt.alt=R.elev+1600; a.tgt.spd=a.perf.vapp+20; a.tgt.hdg=norm360(R.qfu-clamp(xt/25,-30,30));
-    if(along<=5*NM){ a.nav='app'; a.app={end:S_.end,est:true,visual:false,ph:'int',fd:0,si:true}; a.status='Straight-in final '+S_.end+(a.ldg?' · iniş izni':''); renderStrips(); renderFMS(); } }
+    if(along<=Math.min(5,dN)*NM+50){ a.nav='app'; a.app={end:S_.end,est:true,visual:false,ph:'int',fd:0,si:true}; a.status='Straight-in final '+S_.end+(a.ldg?' · iniş izni':''); renderStrips(); renderFMS(); } }
 }
 function alertPilot(msg){ toast(msg,7000); try{ const el=document.getElementById('toast'); el.classList.add('alert'); setTimeout(()=>el.classList.remove('alert'),7000); }catch(e){} }
 function touchdown(a,R){ { const v=[a.pos[0]-R.thr[0],a.pos[1]-R.thr[1]], s=v[0]*R.u[0]+v[1]*R.u[1]; a.pos=[R.thr[0]+R.u[0]*s,R.thr[1]+R.u[1]*s]; }   // main wheels on the centreline
-  a.air=false; a.alt=R.elev; a.vs=0; a.nav='hdg'; a.mode='rollout'; a.hdg=R.qfu; a.rollEnd=R.end; a.status='İndi '+R.end; a.ldg=false; a.ga=false; a.wentAround=false; renderStrips(); renderFMS(); toast(`${a.cs} ${R.end} pistine ${a.tdz||300} m'de indi`); a.tdz=null; }
+  a.air=false; a.alt=R.elev; a.vs=0; a.nav='hdg'; a.mode='rollout'; a.hdg=R.qfu; a.rollEnd=R.end; a.rollS0=-rwyFrame(a,R.end).along; a.status='İndi '+R.end; a.ldg=false; a.ga=false; a.wentAround=false; renderStrips(); renderFMS(); toast(`${a.cs} ${R.end} pistine ${a.tdz||300} m'de indi`); a.tdz=null; }
 function goAround(a,why){ const R=RW[a.app?a.app.end:a.rwy]; a.nav='hdg'; a.tgt.hdg=R?R.qfu:a.hdg; a.tgt.alt=Math.max(a.alt+1000,ELEV+3000); a.tgt.spd=Math.max(a.ias,a.perf.vapp+25); a.app=null; a.ldg=false; a.tdz=null; a.cir=null; a.si=null;
   a.gearUp=a.perf.gear; a.ga=true; a.wentAround=true; a.climbLd=true; a.status='GO-AROUND'+(why?' ('+why+')':''); renderStrips(); renderFMS(); toast(`GO-AROUND: ${a.cs}${why?' · '+why:''}`); }
 function stepTakeoff(a,dt){
@@ -710,10 +718,14 @@ function stepStopRun(a,dt){ a.ias=Math.max(0,a.ias-a.perf.dec*dt); const v=hv(a.
   if(a.ias<=0){ a.mode='stopped'; a.status='Kalkış iptal edildi, pistte durdu'; renderStrips(); renderFMS(); } }
 const rtoLimit=a=>a.perf.v1??a.perf.vr;   // types without V1: cancel possible until VR
 function stepRollout(a,dt){
-  const R=RW[a.rollEnd]; a.ias=Math.max(18,a.ias-(a.ias>60?a.perf.dec*0.8:1.6)*dt);
-  const {along,xt}=rwyFrame(a,a.rollEnd); a.hdg=norm360(R.qfu-clamp(xt/20,-5,5));
+  const R=RW[a.rollEnd]; let {along,xt}=rwyFrame(a,a.rollEnd);
+  if(a.stopD){ // chosen stopping distance: brake so the aircraft stops that many metres after touchdown
+    const sStop=Math.min((a.rollS0||0)+a.stopD,R.len-30), rem=sStop-(-along), v=a.ias*KT;
+    if(rem<=1||a.ias<=0.6){ a.ias=0; a.mode='stopped'; a.status=`Pistte durdu (${Math.round(-along-(a.rollS0||0))} m)`; a.stopD=null; renderStrips(); renderFMS(); return; }
+    a.ias=Math.max(0,a.ias-Math.max(0.4,v*v/(2*rem)/KT)*dt); }
+  else a.ias=Math.max(18,a.ias-(a.ias>60?a.perf.dec*0.8:1.6)*dt); a.hdg=norm360(R.qfu-clamp(xt/20,-5,5));
   const v=hv(a.hdg); a.pos=[a.pos[0]+v[0]*a.ias*KT*dt,a.pos[1]+v[1]*a.ias*KT*dt];
-  if(a.ias<=18.01){ // find the next exit ahead
+  if(!a.stopD&&a.ias<=18.01){ // find the next exit ahead
     const ex=findExit(a,R,-along); if(ex){ startPath(a,ex,{spd:15,mode:'taxi',onEnd:'vacated',status:'Pisti terk ediyor'}); }
     else if(-along>R.len-50){ a.mode='stopped'; a.ias=0; a.status='Pist sonunda durdu'; renderStrips(); } }
 }
@@ -738,7 +750,7 @@ const ICONS=[
   ['startup','Start-Up','gnd'],['switchoff','Switch Off','gnd'],['giveway','Give Way','gnd'],['park','Trafik Park','gnd'],['push','Trafik PushBack','gnd'],['pushstop','PushBack Durdurma','gnd'],['taxi','Trafik Taksi','gnd'],
   ['taxistop','Taksi Durdurma','gnd'],['cross','Cross Runway','gnd'],['lineup','Line-Up','gnd'],['backtrack','Backtrack','gnd'],['turn180','180° Turn','gnd'],['takeoff','Take-Off','gnd'],['tocancel','Cancel Take-Off','gnd'],
   ['sid','SID','air'],['enroute','ENROUTE','air'],['holding','HOLDING','air'],['approach','APPROACH','air'],['star','STAR','air'],
-  ['landing','LANDING','air'],['extend','Extend Downwind','air'],['straight','Straight Approach','air'],['shortapp','Short Approach (pas geçenler)','air'],['visual','Görerek Yaklaşma','air'],['orbit','Orbit','air'],['teleport','Reposition Aircraft','any'],['goaround','Meydan Turu','air']];
+  ['landing','LANDING','air'],['extend','Extend Downwind','air'],['straight','Straight Approach','air'],['shortapp','Short Approach (pas geçenler)','air'],['visual','Görerek Yaklaşma','air'],['orbit','Orbit','air'],['teleport','Reposition Aircraft','any'],['goaround','Go-Around (Meydan Turu)','air'],['sequence','Havada Sıralama (Follow Traffic)','air']];
 function cmd(k){
   const a=SEL; if(!a){ toast('Önce bir uçak seç.'); return; }
   const veh=a.kind==='veh';
@@ -750,6 +762,7 @@ function cmd(k){
     case 'switchoff': { if(a.air){ toast('Havadaki uçağın motorları kapatılamaz.'); return; } if(a.path||a.ias>0.5||a.mode==='tkof'){ toast('Önce uçağı durdur; hareket halindeyken Switch Off yapılmaz.'); return; }
       if(!a.eng){ toast(a.cs+' motorları zaten kapalı.'); return; } a.eng=false; a.taxiLt=false; a.status=(a.mode==='parked'?'Park · ':'')+'Motorlar kapalı'; toast(a.cs+' Switch Off'); break; }
     case 'giveway': { openGiveWay(); return; }
+    case 'sequence': { openSeq(); return; }
     case 'park': {
       if(a.air){ toast('Uçak havada.'); return; }
       if(veh){ a.path=null; a.mode='stopped'; a.ias=0; a.status='Bekliyor'; break; }
@@ -817,7 +830,7 @@ function cmd(k){
     case 'landing': { if(!a.air){ toast('Uçak havada değil.'); return; }
       if(a.nav!=='app'&&a.nav!=='circuit'&&a.nav!=='straight'){ toast('Önce yaklaşma (APPROACH, görerek ya da VFR tur) ver.'); return; }
       const E=(a.app&&a.app.end)||(a.cir&&a.cir.end)||(a.si&&a.si.end)||a.rwy; setMode({k:'tdz',a,E}); return; }
-    case 'orbit': { if(!a.air){ toast('Uçak havada değil.'); return; } a.nav='orbit'; a.orbit={dir:1,left:360,h0:a.hdg}; a.status='Orbit (sağ 360)'; break; }
+    case 'orbit': { if(!a.air){ toast('Uçak havada değil.'); return; } const wasC=a.nav==='circuit'; a.nav='orbit'; a.orbit={dir:1,left:360,h0:a.hdg,cir:wasC&&a.cir&&['entry','join','downwind','upwind','xwind'].includes(a.cir.leg)?a.cir:null}; a.status='Orbit (sağ 360)'; break; }
     case 'extend': { patCmd('extend'); return; }
     case 'straight': { if(!a.air){ toast('Uçak havada değil.'); return; } setMode({k:'si',a}); return; }
     case 'shortapp': { if(!a.air){ toast('Uçak havada değil.'); return; } if(!a.wentAround){ toast('Short Approach sadece pas geçmiş (go-around yapmış) uçak için.'); return; }
@@ -839,11 +852,12 @@ function setMode(m){ MODE=m; const el=document.getElementById('mode'); canvas.cl
     document.getElementById('rUndo').onclick=()=>{ m.picks.pop(); rebuildRoute(m); setMode(m); };
     document.getElementById('rX').onclick=()=>setMode(null);
     document.getElementById('rGo').onclick=()=>commitRoute(m); }
-  else if(m.k==='tdz'){ el.innerHTML=`<span><b>${m.a.cs}</b> Landing clearance RWY ${m.E}: touchdown bölgesini seç (haritada ya da buton).</span>`+tdzOf(m.E).map(d=>`<button class="go" data-tdz="${d}">${d} m</button>`).join('')+`<button id="rX">İptal</button>`;
+  else if(m.k==='tdz'){ el.innerHTML=`<span><b>${m.a.cs}</b> Landing clearance RWY ${m.E}: touchdown bölgesini seç (haritada ya da buton).</span>`+tdzOf(m.E).map(d=>`<button class="go" data-tdz="${d}">${tdzLbl(m.E,d)}</button>`).join('')+`<select id="stopD" title="İniş sonrası durma mesafesi"><option value="">Durma: normal</option>${[400,600,800,1000,1200,1500,2000].map(v=>`<option value="${v}" ${m.a.stopD==v?'selected':''}>Dur: ${v} m</option>`).join('')}</select>`+`<button id="rX">İptal</button>`; { const sd=document.getElementById('stopD'); sd.onchange=()=>{ m.a.stopD=+sd.value||null; }; }
     document.getElementById('rX').onclick=()=>setMode(null); el.querySelectorAll('[data-tdz]').forEach(b=>b.onclick=()=>clearLand(m.a,m.E,+b.dataset.tdz)); }
-  else if(m.k==='si'){ el.innerHTML=`<span><b>${m.a.cs}</b> Straight Approach: pisti seç.</span>`+ENDS.map(e=>`<button class="go" data-e="${e}">${e}</button>`).join('')+`<button id="rX">İptal</button>`;
-    document.getElementById('rX').onclick=()=>setMode(null); el.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{ setMode(null); straightIn(m.a,b.dataset.e); }); }
-  else if(m.k==='short'){ el.innerHTML=`<span><b>${m.a.cs}</b> Short Approach: pist </span>`+ENDS.map(e=>`<button data-e="${e}" class="${e===m.E?'go':''}">${e}</button>`).join('')+`<span> · iniş noktası (haritada ya da buton):</span>`+tdzOf(m.E).map(d=>`<button class="go" data-tdz="${d}">${d} m</button>`).join('')+`<button id="rX">İptal</button>`;
+  else if(m.k==='si'){ el.innerHTML=`<span><b>${m.a.cs}</b> Straight Approach: mesafe </span><select id="siD">${[10,8,5,3].map(v=>`<option value="${v}" ${(m.d||10)==v?'selected':''}>${v} NM</option>`).join('')}</select><span> · pisti seç:</span>`+ENDS.map(e=>`<button class="go" data-e="${e}">${e}</button>`).join('')+`<button id="rX">İptal</button>`;
+    { const sd=document.getElementById('siD'); sd.onchange=()=>{ m.d=+sd.value; }; }
+    document.getElementById('rX').onclick=()=>setMode(null); el.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{ setMode(null); straightIn(m.a,b.dataset.e,m.d||10); }); }
+  else if(m.k==='short'){ el.innerHTML=`<span><b>${m.a.cs}</b> Short Approach: pist </span>`+ENDS.map(e=>`<button data-e="${e}" class="${e===m.E?'go':''}">${e}</button>`).join('')+`<span> · iniş noktası (haritada ya da buton):</span>`+tdzOf(m.E).map(d=>`<button class="go" data-tdz="${d}">${tdzLbl(m.E,d)}</button>`).join('')+`<select id="stopD" title="İniş sonrası durma mesafesi"><option value="">Durma: normal</option>${[400,600,800,1000,1200,1500,2000].map(v=>`<option value="${v}" ${m.a.stopD==v?'selected':''}>Dur: ${v} m</option>`).join('')}</select>`+`<button id="rX">İptal</button>`; { const sd=document.getElementById('stopD'); sd.onchange=()=>{ m.a.stopD=+sd.value||null; }; }
     document.getElementById('rX').onclick=()=>setMode(null); el.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>setMode({...m,E:b.dataset.e}));
     el.querySelectorAll('[data-tdz]').forEach(b=>b.onclick=()=>shortApp(m.a,m.E,+b.dataset.tdz)); }
   else if(m.k==='tele'){ el.innerHTML=`<span><b>${m.a.cs}</b> Reposition: yeni konumu haritada tıkla.</span><button id="rX">İptal</button>`; document.getElementById('rX').onclick=()=>setMode(null); }
@@ -854,7 +868,16 @@ const TDZ0=[300,450,600];
 // touchdown points = the blue runway points from the user's chart, in the first 60% of the runway from that threshold
 function tdzOf(E){ const R=RW[E]; const L=R.len||3000, out=[];
   NODES.forEach(n=>{ if(n.rp!=='blue') return; const v=[n.x-R.thr[0],n.y-R.thr[1]], s=v[0]*R.u[0]+v[1]*R.u[1], c=Math.abs(v[0]*R.u[1]-v[1]*R.u[0]); if(c<5&&s>100&&s<L*0.6) out.push(Math.round(s)); });
-  return out.length?out.sort((a,b)=>a-b):TDZ0; }
+  const base=out.length?out.sort((a,b)=>a-b):TDZ0.slice();
+  // extra VFR touchdown points (displaced-threshold training): fixed spots on the runway at C1, C1–E1, C1–B1, B1–runway end
+  const TL={}; base.forEach(d=>TL[d]=d+' m');
+  const sAt=nm=>{ let r=null; EDGES.forEach(e=>{ if(e.name!==nm||e.kind==='runway') return; [e.a,e.b].forEach(id=>{ const n=NODES[id]; if(!onRunway(id)) return;
+      const v=[n.x-R.thr[0],n.y-R.thr[1]]; if(Math.abs(v[0]*R.u[1]-v[1]*R.u[0])<R.width/2+5) r=v[0]*R.u[0]+v[1]*R.u[1]; }); }); return r; };
+  const c1=sAt('C1'), e1=sAt('E1'), b1=sAt('B1');
+  if(c1!=null&&e1!=null&&b1!=null){ const endB=b1>c1?L:0;
+    [[c1,'C1'],[(c1+e1)/2,'C1–E1'],[(c1+b1)/2,'C1–B1'],[(b1+endB)/2,'B1–pist sonu']].forEach(([d,l])=>{ d=Math.round(d); if(d>100&&d<L-300&&!base.includes(d)){ base.push(d); TL[d]=l+' · '+d+' m'; } }); }
+  base.sort((a,b)=>a-b); TDZL[E]=TL; return base; }
+const TDZL={}; const tdzLbl=(E,d)=>(TDZL[E]&&TDZL[E][d])||d+' m';
 // short approach after a go-around: a tight circuit on the side the aircraft is on, then lands at the chosen point
 function shortApp(a,E,d){ setMode(null); if(!a.air) return; const R=RW[E], v=[a.pos[0]-R.thr[0],a.pos[1]-R.thr[1]], sL=patSide(E,'L'), hand=(v[0]*sL[0]+v[1]*sL[1])>=0?'L':'R';
   joinPattern(a,E,hand,{short:true,ldg:true}); a.tdz=d; a.ga=false; a.gearUp=false; if(a.perf.gear) a.gearDown=true;
@@ -971,6 +994,24 @@ function openGiveWay(){
   $('acmBody').innerHTML='<div class="hint" style="margin:0 0 6px">Sırası küçük olan önce geçer. Boş bırakılan katılmaz. Örnek: TC-AMA 1, TC-ABC 2 ise TC-ABC, TC-AMA geçene kadar bekler.</div>'+
     g.map(x=>`<label style="display:grid;grid-template-columns:1fr 70px;align-items:center;gap:8px">${x.cs} <small>${x.status||''}</small><input data-gw="${x.id}" type="number" min="1" max="20" value="${x.gw??''}"></label>`).join('');
   $('acmErr').textContent=''; $('dlgAcm').hidden=false; }
+// airborne sequencing: number N follows number N-1 to the same runway (speed control on approach, base held until the one ahead has turned base)
+function openSeq(){
+  const g=TR.filter(x=>x.kind==='ac'&&x.air&&x.mode!=='crash'); if(g.length<2){ toast('Havada sıralama için en az iki uçak havada olmalı.'); return; }
+  acmKind='seq'; $('acmT').textContent='Havada sıralama (follow traffic)';
+  $('acmBody').innerHTML='<div class="hint" style="margin:0 0 6px">1 önce iner. 2 numara 1\'i takip eder: aynı piste giderken araya mesafe koyar (hızını düşürür), downwind\'da öndeki base\'e dönmeden base\'e dönmez. Boş bırakılan katılmaz.</div>'+
+    g.map(x=>`<label style="display:grid;grid-template-columns:1fr 70px;align-items:center;gap:8px">${x.cs} <small>${x.status||''}</small><input data-seq="${x.id}" type="number" min="1" max="20" value="${x.seq??''}"></label>`).join('');
+  $('acmErr').textContent=''; $('dlgAcm').hidden=false; }
+const seqRwy=a=>a.nav==='circuit'&&a.cir?a.cir.end:a.nav==='app'&&a.app?a.app.end:a.nav==='straight'&&a.si?a.si.end:null;
+const seqAhead=a=>{ if(a.seq==null||a.seq<2) return null; const b=TR.find(x=>x!==a&&x.seq===a.seq-1); return b&&b.air&&b.mode!=='crash'?b:null; };
+function seqStep(a){ const b=seqAhead(a); if(!b) return; const E=seqRwy(a); if(!E||seqRwy(b)!==E) return;
+  const R=RW[E], aD=-rwyFrame(a,E).along, bD=-rwyFrame(b,E).along;   // metres from the threshold along the final (negative = before it)
+  const sep=(a.perf.w==='L'&&b.perf.w==='L'?1.5:a.perf.w==='H'||b.perf.w==='H'?4:3)*NM, d=dist(a.pos,b.pos);
+  const bFinal=b.nav==='app'||(b.nav==='circuit'&&b.cir&&['baseturn','base','finalturn'].includes(b.cir.leg))||(b.nav==='straight');
+  if(a.nav==='circuit'&&a.cir&&['join','downwind'].includes(a.cir.leg)&&a.cir.baseReq!==false){   // hold the downwind until the one ahead is on base/final and far enough
+    if(!bFinal||d<sep){ a.cir.seqHold=true; a.cir.baseReq=false; } }
+  if(a.nav==='circuit'&&a.cir&&a.cir.seqHold&&bFinal&&d>=sep){ a.cir.seqHold=false; a.cir.baseReq=true; }
+  if((a.nav==='app'||a.nav==='straight')&&d<sep&&aD<bD){ a.tgt.spd=Math.max(a.perf.vmin+5,Math.min(a.tgt.spd,(b.ias||a.perf.vapp)-10)); }
+  a.seqTxt=`Sıra ${a.seq} · ${b.cs} takip (${(d/NM).toFixed(1)} NM)`; }
 // physical collisions (GND-05): flames regardless of the automatic stops
 function checkCollisions(){
   for(let i=0;i<TR.length;i++) for(let j=i+1;j<TR.length;j++){ const a=TR[i], b=TR[j]; if(a.mode==='crash'&&b.mode==='crash') continue;
@@ -1050,11 +1091,13 @@ function draw(){
   if(s>0.004){
     ctx.fillStyle='#8f9499'; DATA.pavement.forEach(p=>{poly(p);ctx.fill();});
     ctx.fillStyle='#1e2a23'; DATA.holes.forEach(p=>{poly(p);ctx.fill();});
-    { ctx.strokeStyle='#8f9499'; ctx.lineJoin='round'; ctx.lineCap='round'; const EL=(window.EDH&&EDH.on)?EDH.L.edges:EDGES; for(const e of EL){ if(e.kind==='runway') continue; ctx.lineWidth=(e.kind==='leadin'?16:23)*s; line(e.pts); ctx.stroke(); } ctx.lineCap='butt'; }
+    { ctx.strokeStyle='#8f9499'; ctx.lineJoin='round'; ctx.lineCap='round'; const EL=(window.EDH&&EDH.on)?EDH.L.edges:EDGES; for(const e of EL){ if(e.kind==='runway') continue; ctx.lineWidth=Math.max((e.kind==='leadin'?16:23)*s,(e.kind==='leadin'?16:23)/60*RWMINPX); line(e.pts); ctx.stroke(); } ctx.lineCap='butt'; }
     ctx.strokeStyle='#8f9499'; ctx.lineCap='butt'; for(const l of (DATA.pave_lines||[])){ line(l.pts); ctx.lineWidth=l.w*s; ctx.stroke(); } ctx.lineCap='round';
     if(DATA.buildings&&s>0.05){ ctx.lineWidth=1; DATA.buildings.forEach(b=>{poly(b.pts);ctx.fillStyle='#4f7fb3';ctx.fill();ctx.strokeStyle='#22405f';ctx.stroke();}); }
     for(const r of DATA.runways){ const a=r.thr[r.ends[0]].xy,b=r.thr[r.ends[1]].xy,L=dist(a,b),n=[-(b[1]-a[1])/L*r.width/2,(b[0]-a[0])/L*r.width/2];
-      poly([[a[0]+n[0],a[1]+n[1]],[b[0]+n[0],b[1]+n[1]],[b[0]-n[0],b[1]-n[1]],[a[0]-n[0],a[1]-n[1]]]); ctx.fillStyle='#232627'; ctx.fill();
+      const rwPx=Math.max(r.width*s,RWMINPX*r.width/60); ctx.lineCap='butt';
+      ctx.strokeStyle='#8f9499'; ctx.lineWidth=rwPx+4; line([a,b]); ctx.stroke();   // light edge so the runway stands out from the grass
+      ctx.strokeStyle='#232627'; ctx.lineWidth=rwPx; line([a,b]); ctx.stroke(); ctx.lineCap='round';
       if(s>0.05){ ctx.strokeStyle='#e8e8e2'; ctx.setLineDash([30*s,20*s]); ctx.lineWidth=Math.max(1,0.9*s); line([a,b]); ctx.stroke(); ctx.setLineDash([]); } }
     // extended centrelines
     ctx.strokeStyle='rgba(255,255,255,.25)'; ctx.setLineDash([4,8]); ctx.lineWidth=1;
@@ -1110,7 +1153,7 @@ function draw(){
   if(MODE&&(MODE.k==='tdz'||MODE.k==='short')){ const R=RW[MODE.E]; ctx.font='bold 11px system-ui';
     for(const d of tdzOf(MODE.E)){ const p=tdzPt(MODE.E,d), q=S(p), n=hv(R.qfu+90), a1=S([p[0]+n[0]*R.width/2,p[1]+n[1]*R.width/2]), a2=S([p[0]-n[0]*R.width/2,p[1]-n[1]*R.width/2]);
       ctx.strokeStyle='#22c55e'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(a1[0],a1[1]); ctx.lineTo(a2[0],a2[1]); ctx.stroke();
-      ctx.fillStyle='#22c55e'; ctx.beginPath(); ctx.arc(q[0],q[1],7,0,7); ctx.fill(); ctx.fillStyle='#fff'; ctx.fillText(d+' m',q[0]+10,q[1]-8); } }
+      ctx.fillStyle='#22c55e'; ctx.beginPath(); ctx.arc(q[0],q[1],7,0,7); ctx.fill(); ctx.fillStyle='#fff'; ctx.fillText(tdzLbl(MODE.E,d),q[0]+10,q[1]-8); } }
   // distance measurement
   if(MODE&&MODE.k==='meas'&&MODE.pts.length){ const P=MODE.pts.map(S); ctx.strokeStyle='#ffd24a'; ctx.fillStyle='#ffd24a'; ctx.lineWidth=2; ctx.setLineDash([8,5]);
     if(P.length===2){ ctx.beginPath(); ctx.moveTo(P[0][0],P[0][1]); ctx.lineTo(P[1][0],P[1][1]); ctx.stroke(); } ctx.setLineDash([]);
@@ -1179,7 +1222,7 @@ function renderStrips(){
     return `<div class="strip ${c} ${a===SEL?'sel':''}" data-id="${a.id}"><div class="bar"></div><div class="body">
       <span class="cs">${a.cs}</span><span class="r">${a.kind==='veh'?a.type:a.type+' '+a.rules}</span>
       <span class="m">${a.kind==='veh'?'':`${a.adep||'----'}→${a.ades||'----'} ${a.rwy}`}</span><span class="r">${a.kind==='veh'?'':a.ssr}</span>
-      <span class="m" style="grid-column:1/-1">${a.status||''}</span></div>
+      <span class="m" style="grid-column:1/-1">${a.status||''}${a.seq!=null&&a.air?` · <b>#${a.seq}</b>`:''}</span></div>
       <div class="st ${stc}">${a.kind==='veh'?ICO_CAR:ICO_PLANE}</div></div>`; };
   el.innerHTML=ac.map(one).join('')+(vh.length?'<div class="sub" style="margin:6px 0 2px">Yer araçları</div>'+vh.map(one).join(''):'');
   el.querySelectorAll('.strip').forEach(s=>s.onclick=()=>select(TR.find(a=>a.id===s.dataset.id)));
@@ -1232,7 +1275,8 @@ function tile(k){
     visual:`<rect width="36" height="36" fill="#5d7f3c"/><path d="M14 36l2-34h4l2 34z" fill="#666"/><path d="M18 34V4" stroke="#fff" stroke-dasharray="3 3"/><path d="M8 18h20" stroke="#ddd"/>`,
     orbit:`<rect width="36" height="36" fill="#2a5f9e"/><circle cx="18" cy="18" r="11" fill="none" stroke="#fff" stroke-width="2"/>${plane(18,18,-90,1)}<path d="M28 13l1 6-5-2z" fill="#fff"/>`,
     teleport:`<rect width="36" height="36" fill="#3b6aa8"/>${plane(13,22,-90,0.9,'#cfe0ff')}<path d="M22 6l2 4 4 1-4 2-1 4-2-4-4-1 4-2z" fill="#fff"/><path d="M22 22l6-6" stroke="#fff" stroke-dasharray="2 2"/>`,
-    goaround:`<rect width="36" height="36" fill="#557fae"/><circle cx="18" cy="18" r="13" fill="none" stroke="#fff" stroke-width="2"/>${plane(18,20,-90,1.1)}<path d="M18 4v6" stroke="#fff" stroke-width="2"/>`};
+    goaround:`<rect width="36" height="36" fill="#c2410c"/><path d="M6 27h24" stroke="#fff" stroke-width="2"/><path d="M8 24c6-1 11-6 14-15" stroke="#fff" stroke-width="2.4" fill="none"/><path d="M17 9l6-3 1 7z" fill="#fff"/><text x="27" y="33" font-size="9" font-weight="700" fill="#fff" text-anchor="middle" font-family="system-ui">GA</text>`,
+    sequence:`<rect width="36" height="36" fill="#0e7490"/><path d="M5 26h26" stroke="#fff" stroke-width="1.5" stroke-dasharray="3 2"/><path d="M24 18l6-3-6-3v2h-4v2h4z" fill="#fff"/><path d="M11 18l6-3-6-3v2H7v2h4z" fill="#fff"/><text x="10" y="34" font-size="8" font-weight="700" fill="#fff" text-anchor="middle" font-family="system-ui">2</text><text x="24" y="34" font-size="8" font-weight="700" fill="#fff" text-anchor="middle" font-family="system-ui">1</text>`};
   return `<svg viewBox="0 0 36 36">${T[k]}</svg>`;
 }
 // command icons; the order can be edited (drag an icon onto another) and is remembered in this browser
@@ -1289,7 +1333,9 @@ function drawPFD(){
 // ======================================================================
 const $=id=>document.getElementById(id);
 $('mMain').onclick=e=>{ e.stopPropagation(); $('dMain').hidden=!$('dMain').hidden; $('dAc').hidden=true; };
-$('mAc').onclick=e=>{ e.stopPropagation(); $('dAc').hidden=!$('dAc').hidden; $('dMain').hidden=true; };
+$('mAc').onclick=e=>{ e.stopPropagation(); $('dAc').hidden=!$('dAc').hidden; $('dMain').hidden=true;
+  const v=!!(SEL&&SEL.kind==='veh'), q=k=>$('dAc').querySelector(`[data-acm="${k}"]`);   // vehicles: speed, callsign, reposition, remove
+  q('spd').textContent=v?'Araç hızı (kt)':'IAS / TAS · Taksi hızı'; q('del').textContent=v?'Aracı kaldır':'Uçağı kaldır'; q('hdg').hidden=v; q('alt').hidden=v; };
 addEventListener('click',()=>{ $('dMain').hidden=true; $('dAc').hidden=true; $('dPat').hidden=true; });
 document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openAdd(b.dataset.open));
 function openAdd(which){
@@ -1377,7 +1423,7 @@ document.querySelectorAll('[data-acm]').forEach(b=>b.onclick=()=>{ const a=SEL; 
   if(acmKind==='del'){ TR.splice(TR.indexOf(a),1); select(null); toast(a.cs+' kaldırıldı'); return; }
   if(a.kind==='veh'&&acmKind!=='cs'&&acmKind!=='spd'){ toast('Yer araçları için sadece callsign ve taksi hızı değişir.'); return; }
   const T={hdg:['Arrange heading',`<label>Heading (°)<input id="m1" type="number" min="1" max="360" value="${pad3(a.tgt?a.tgt.hdg:a.hdg)}"></label><label>Dönüş<select id="m2"><option value="">En kısa</option><option value="L">Sola</option><option value="R">Sağa</option></select></label>`],
-    spd:!a.air?['Taksi hızı',`<label>Taksi hızı (kt)<input id="m1" type="number" min="1" max="${TAXIMAX(a)}" value="${Math.round(a.taxiSpd||taxiDef(a))}"></label><div class="hint">Şu an ${Math.round(a.ias)} kt · en fazla ${TAXIMAX(a)} kt. Dönüşlerde ${a.kind==='veh'?'araç':'uçak'} yine yavaşlar.</div>`]:['IAS / TAS',`<label>IAS (kt)<input id="m1" type="number" value="${Math.round(a.tgt?a.tgt.spd:a.ias)}"></label><div class="hint">Şu an IAS ${Math.round(a.ias)} kt · TAS ${Math.round(a.ias*(1+0.02*a.alt/1000))} kt · GS ${Math.round(a.gs||a.ias)} kt</div>`],
+    spd:!a.air?[a.kind==='veh'?'Araç hızı':'Taksi hızı',`<label>${a.kind==='veh'?'Araç hızı':'Taksi hızı'} (kt)<input id="m1" type="number" min="1" max="${TAXIMAX(a)}" value="${Math.round(a.taxiSpd||taxiDef(a))}"></label><div class="hint">Şu an ${Math.round(a.ias)} kt · en fazla ${TAXIMAX(a)} kt. Dönüşlerde ${a.kind==='veh'?'araç':'uçak'} yine yavaşlar.</div>`]:['IAS / TAS',`<label>IAS (kt)<input id="m1" type="number" value="${Math.round(a.tgt?a.tgt.spd:a.ias)}"></label><div class="hint">Şu an IAS ${Math.round(a.ias)} kt · TAS ${Math.round(a.ias*(1+0.02*a.alt/1000))} kt · GS ${Math.round(a.gs||a.ias)} kt</div>`],
     cs:['Callsign',`<label>Callsign<input id="m1" value="${a.cs}"></label>`],
     alt:['Altitude',`<label>Altitude (ft)<input id="m1" type="number" step="100" value="${Math.round(a.tgt?a.tgt.alt:a.alt)}"></label>`]}[acmKind];
   $('acmT').textContent=T[0]; $('acmBody').innerHTML=T[1]; $('acmErr').textContent=''; $('dlgAcm').hidden=false; $('m1').focus(); });
@@ -1389,6 +1435,10 @@ $('acmGo').onclick=()=>{ if(acmKind==='lineup'){ $('acmErr').textContent='Bir pi
     document.querySelectorAll('[data-gw]').forEach(i=>{ const n=i.value.trim(); if(n&&(!/^\d+$/.test(n)||seen[n])) bad='Her sıra numarası bir kez ve tam sayı olmalı.'; if(n) seen[n]=1; }); if(bad){ $('acmErr').textContent=bad; return; }
     document.querySelectorAll('[data-gw]').forEach(i=>{ const x=TR.find(t=>t.id===i.dataset.gw); if(!x) return; const n=i.value.trim(); x.gw=n?+n:null; if(n){ x.blocked=null; } });
     $('dlgAcm').hidden=true; toast('Give Way sırası verildi'); renderStrips(); renderFMS(); return; }
+  if(acmKind==='seq'){ const seen={}; let bad='';
+    document.querySelectorAll('[data-seq]').forEach(i=>{ const n=i.value.trim(); if(n&&(!/^\d+$/.test(n)||seen[n])) bad='Her sıra numarası bir kez ve tam sayı olmalı.'; if(n) seen[n]=1; }); if(bad){ $('acmErr').textContent=bad; return; }
+    document.querySelectorAll('[data-seq]').forEach(i=>{ const x=TR.find(t=>t.id===i.dataset.seq); if(!x) return; const n=i.value.trim(); x.seq=n?+n:null; });
+    $('dlgAcm').hidden=true; toast('Havada sıralama verildi'); renderStrips(); renderFMS(); return; }
   const a=SEL, v=$('m1').value.trim(), err=$('acmErr');
   if(acmKind==='cs'){ if(!/^[A-Z0-9 ]{2,10}$/i.test(v)){ err.textContent='Geçersiz callsign.'; return; } a.cs=v.toUpperCase(); }
   else { const n=+v; if(!isFinite(n)){ err.textContent='Sayı gir.'; return; }
@@ -1490,7 +1540,7 @@ function broadcast(force){ const now=Date.now(); if(!force&&now-lastB<90) return
   const msg={t:'state',wx:{inp:WX.inp,cur:WX.cur,hist:WX.hist.slice(-600),active:activeRwy},
     sb:Object.keys(SBOFF), traffic:TR.map(a=>{ let v=[0,0],vz=0; if(a._bp){ const dt=(now-a._bt)/1000; if(dt>0.02){ v=[(a.pos[0]-a._bp[0])/dt,(a.pos[1]-a._bp[1])/dt]; vz=(a.alt-a._ba)/dt; } }
       a._bp=a.pos.slice(); a._ba=a.alt; a._bt=now;
-      return {id:a.id,kind:a.kind,cs:a.cs,type:a.type,airline:a.airline,rep:a.rep||0,eng:!!a.eng,lt:lightsOf(a),gear:a.kind==='ac'?+(a.gearK??1).toFixed(2):1,crash:a.mode==='crash',pos:a.pos,hdg:a.hdg,pt:+(a.pitch||0).toFixed(1),alt:a.alt,air:!!a.air,ias:a.ias,v:[+v[0].toFixed(2),+v[1].toFixed(2)],vz:+vz.toFixed(2)}; })};
+      return {ts:now,id:a.id,kind:a.kind,cs:a.cs,type:a.type,airline:a.airline,rep:a.rep||0,eng:!!a.eng,lt:lightsOf(a),gear:a.kind==='ac'?+(a.gearK??1).toFixed(2):1,crash:a.mode==='crash',pos:a.pos,hdg:a.hdg,pt:+(a.pitch||0).toFixed(1),alt:a.alt,air:!!a.air,ias:a.ias,v:[+v[0].toFixed(2),+v[1].toFixed(2)],vz:+vz.toFixed(2)}; })};
   const wxDue=force||now-lastWxB>=1000; if(wxDue) lastWxB=now; else delete msg.wx;   // the full weather block (600-sample history) only once a second
   try{ bc&&bc.postMessage(msg); }catch(e){}
   if(NET.on) NET.sendState(force?{wx:{inp:WX.inp},wxc:WX.cur,traffic:msg.traffic,sb:msg.sb}:{wxc:WX.cur,traffic:msg.traffic,sb:msg.sb});
