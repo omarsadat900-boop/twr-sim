@@ -712,8 +712,13 @@ function stepPath(a,dt){
   if(a.ias<0.3&&rem<1.5){ endPath(a); return; }
   const s0=P.s; P.s=Math.min(P.cum.at(-1),P.s+a.ias*KT*dt); if(stopS!=null) P.s=Math.min(P.s,Math.max(stopS,s0));
   if(a.kind==='ac'){ if(wheelStep(a,P,dt,s0)) return; }
-  else { const [p,h]=pathPos(P,P.s); a.pos=p;
-    const want=P.back?norm360(h+180):h; a.hdg=norm360(a.hdg+clamp(norm180(want-a.hdg),-40*dt,40*dt)); }
+  else { // vehicles: the body lies along the line (chord across its own length), so it never slides sideways;
+    // when the line starts in another direction it first turns on the spot
+    const hl=Math.max(len(a),8)/2, e=P.cum.at(-1), A=pathPos(P,Math.max(0,P.s-hl))[0], B=pathPos(P,Math.min(e,P.s+hl))[0];
+    let want=dist(A,B)>0.5?brg(A,B):pathPos(P,P.s)[1]; if(P.back) want=norm360(want+180);
+    const dh=norm180(want-a.hdg);
+    if(Math.abs(dh)>25&&!P.back){ P.s=s0; a.ias=Math.min(a.ias,1); a.hdg=norm360(a.hdg+clamp(dh,-60*dt,60*dt)); }
+    else { a.pos=pathPos(P,P.s)[0]; a.hdg=norm360(a.hdg+clamp(dh,-90*dt,90*dt)); } }
   if(P.s>=P.cum.at(-1)-0.2) endPath(a);
 }
 // aircraft on the ground: path points are nose-wheel positions (pushback: main-gear positions).
@@ -824,7 +829,7 @@ const patSpd=a=>a.perf.w==='L'?a.perf.vapp+20:Math.min(210,a.perf.vapp+45);
 function patP(E,hand,al,off){ const R=RW[E], sd=patSide(E,hand); return [R.thr[0]+R.u[0]*al+sd[0]*off,R.thr[1]+R.u[1]*al+sd[1]*off]; }
 function patLegs(E,hand,w){ const R=RW[E], D=patDims(w), P=(al,o)=>patP(E,hand,al,o);
   return { dep:[P(0,0),P(R.len+D.C,0)], up:[P(0,-0.25*NM),P(R.len,-0.25*NM)], cw:[P(R.len+D.C,0),P(R.len+D.C,D.W)],
-    dw:[P(R.len+D.C,D.W),P(-5*NM,D.W)], base:[P(-D.B,D.W),P(-D.B,0)], fin:[P(-5*NM,0),P(0,0)] }; }
+    dw:[P(R.len+D.C,D.W),P(-5*NM,D.W)], base:[P(-5*NM,D.W),P(-5*NM,0)], fin:[P(-5*NM,0),P(0,0)] }; }
 function flyLine(a,P0,h){ const v=[a.pos[0]-P0[0],a.pos[1]-P0[1]], r=hv(h+90), e=v[0]*r[0]+v[1]*r[1]; a.tgt.hdg=norm360(h-clamp(e*0.04,-35,35)); return e; }
 const turnLead=a=>{ const v=(a.gs||a.ias)*KT, w=(a.perf.rate||3)*D2R; return v/w; };
 // fly toward a straight line through P0 with heading h, cutting in at most maxCut degrees and easing onto it (no overshoot)
@@ -1073,7 +1078,7 @@ function tdzOf(E){ const R=RW[E]; const L=R.len||3000, out=[];
       const v=[n.x-R.thr[0],n.y-R.thr[1]]; if(Math.abs(v[0]*R.u[1]-v[1]*R.u[0])<R.width/2+5) r=v[0]*R.u[0]+v[1]*R.u[1]; }); }); return r; };
   const c1=sAt('C1'), e1=sAt('E1'), b1=sAt('B1');
   if(c1!=null&&e1!=null&&b1!=null){ const endB=b1>c1?L:0;
-    [[c1,'C1'],[(c1+e1)/2,'C1–E1'],[(c1+b1)/2,'C1–B1'],[(b1+endB)/2,'B1–pist sonu']].forEach(([d,l])=>{ d=Math.round(d); if(d>100&&d<L-300&&!base.includes(d)){ base.push(d); TL[d]=l+' · '+d+' m'; } }); }
+    [[c1,'C1'],[(c1+e1)/2,'C1–E1'],[(c1+b1)/2,'C1–B1'],[b1+Math.sign(endB-b1)*50,'B1 önü']].forEach(([d,l])=>{ d=Math.round(d); if(d>100&&d<L-300&&!base.includes(d)){ base.push(d); TL[d]=l+' · '+d+' m'; } }); }
   base.sort((a,b)=>a-b); TDZL[E]=TL; return base; }
 const TDZL={}; const tdzLbl=(E,d)=>(TDZL[E]&&TDZL[E][d])||d+' m';
 // short approach after a go-around: a tight circuit on the side the aircraft is on, then lands at the chosen point

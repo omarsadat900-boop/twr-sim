@@ -865,7 +865,8 @@ function ptsLayer(list,size){ const g=new THREE.BufferGeometry(), P=[], C=[], co
   const p=new THREE.Points(g,new THREE.PointsMaterial({size,sizeAttenuation:false,vertexColors:true,map:GLOW,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending})); p.renderOrder=5; return p; }
 const NIGHT=new THREE.Group(); NIGHT.visible=false; scene.add(NIGHT);
 const DIRL={};   // '03'/'21' -> group of direction-dependent lights
-const PAPI={};   // end -> {pts, layer, base, left}
+const PAPI={};
+const RABBIT=[];   // sequenced flashing approach lights, one layer per runway end   // end -> {pts, layer, base, left}
 const SBAR={};   // runway holding point id -> layer
 const along=(L,step)=>{ const out=[]; for(let s=0;s<=L+0.1;s+=step) out.push(Math.min(s,L)); if(out.at(-1)<L-1) out.push(L); return out; };
 { const W='#fff4d6', G='#2bff6e', Rd='#ff2a1a', Y='#ffcf3a', B='#3d6bff';
@@ -878,6 +879,10 @@ const along=(L,step)=>{ const out=[]; for(let s=0;s<=L+0.1;s+=step) out.push(Mat
       for(const t of along(q.L,30)){ const fromEnd=q.L-t; list.push([...Q(s0+dir*t,0),0.25,fromEnd<300?Rd:fromEnd<900?(Math.round(t/30)%2?Rd:W):W]); }   // centreline
       for(let t=30;t<=900;t+=30){ const c=Q(s0-dir*t,0); for(const o of [-2,-1,0,1,2]) list.push([c[0]+q.n[0]*o,c[1]+q.n[1]*o,0.8,W]);   // approach lights
         if(t===300) for(let o=-15;o<=15;o+=1.5) if(Math.abs(o)>2.5) list.push([c[0]+q.n[0]*o,c[1]+q.n[1]*o,0.8,W]); }
+      // touchdown zone lights: a barrette of 3 lights each side of the centreline every 60 m, first 900 m
+      { const tz=[]; for(let t=60;t<=900;t+=60) for(const o of [-9,-10.5,-12,9,10.5,12]) tz.push([...Q(s0+dir*t,o),0.3,W]); const l=ptsLayer(tz,6.5); l.userData.dir=d; RABBIT.push(l); NIGHT.add(l); }
+      // sequenced flashing lights ("rabbit") on the approach centreline, 900 m -> 300 m, running toward the threshold
+      { const rb=[]; for(let t=900;t>=300;t-=30) rb.push([...Q(s0-dir*t,0),1.0,W]); const l=ptsLayer(rb,18); l.userData.dir=d; l.userData.n=rb.length; RABBIT.push(l); NIGHT.add(l); }
       const pts=[0,1,2,3].map(k=>{ const c=Q(s0+dir*300,0); const off=hw+15+k*9; return [c[0]+nL[0]*off,c[1]+nL[1]*off,0.8]; });
       const lay=ptsLayer(pts.map(p=>[...p,Rd]),9); NIGHT.add(lay); PAPI[E]={lay,thr:Q(s0,0),u:uE,elev:r.elev_ft[i]}; }); }
   for(const e of DATA.taxi.edges){ if(e.kind!=='taxiway'&&e.kind!=='taxilane') continue;
@@ -901,6 +906,8 @@ const PAPI_W=new THREE.Color('#fff4d6'), PAPI_R=new THREE.Color('#ff2a1a');
 function nightFrame(night,active){
   NIGHT.visible=night; if(!night) return;
   const d=(active||'03R').slice(0,2); for(const k in DIRL) DIRL[k].visible=k===d;
+  { const ph=(performance.now()%500)/500; for(const l of RABBIT){ l.visible=l.userData.dir===d; if(!l.visible||!l.userData.n) continue; const n=l.userData.n, k=Math.floor(ph*n*1.25), c=l.geometry.attributes.color;
+      for(let i=0;i<n;i++){ const v=i===k?1:0; c.setXYZ(i,v,v*0.96,v*0.84); } c.needsUpdate=true; } }   // twice a second, toward the threshold, short dark gap
   const off=new Set(window.__sb||[]); for(const id in SBAR) SBAR[id].visible=!off.has(id);
   // PAPI shows the glide path of the nearest aircraft on that final (2 white + 2 red = on slope)
   for(const E in PAPI){ const P=PAPI[E]; P.lay.visible=E.slice(0,2)===d; if(!P.lay.visible) continue; let ang=3.0, best=1e9;
