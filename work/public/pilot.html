@@ -1202,7 +1202,8 @@ function openLuBehind(a,id,hn,hd){
 const alongOf=(p,E)=>{ const R=RW[E]; return (p[0]-R.thr[0])*R.u[0]+(p[1]-R.thr[1])*R.u[1]; };
 function luBehindTick(){
   for(const a of TR){ const W=a.luWait; if(!W) continue;
-    if(a.air||a.mode==='crash'||a.path){ if(a.path&&a.path.onEnd==='lined') continue; if(a.air||a.mode==='crash'){ a.luWait=null; } continue; }
+    if(a.air||a.mode==='crash'){ a.luWait=null; continue; }
+    if(a.path){ if(a.path.onEnd==='lined') continue; if(!(a.hs&&a.ias<0.5)) continue; }   // still taxiing to the holding point; holding short there counts as waiting
     const b=TR.find(t=>t.id===W.x); let go=false, why='';
     if(!b){ go=true; why='trafik yok'; }
     else if(b.ga||b.wentAround&&b.air){ a.luWait=null; a.status=`${b.cs} pas geçti · Line-up behind iptal, bekliyor`; toast(`${a.cs}: ${b.cs} pas geçti, Line-Up Behind iptal.`); renderStrips(); renderFMS(); continue; }
