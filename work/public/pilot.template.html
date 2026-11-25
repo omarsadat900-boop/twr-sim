@@ -569,7 +569,7 @@ function stepAir(a,dt){
   if(a.glide!=null){ const want=a.glide; const need=(want-a.alt)/dt*60; a.vs=clamp(need,-2500,a.vs>0?0:0); if(a.alt<want) a.vs=0; }
   else { const da=a.tgt.alt-a.alt; let want=clamp(da*4,-(a.perf.des||1800),a.perf.clb); if(Math.abs(da)<5) want=0; a.vs+=clamp(want-a.vs,-900*dt,700*dt); }
   a.alt+=a.vs/60*dt;
-  { const fpa=Math.atan2(a.vs/60*0.3048,Math.max(30,a.gs||a.ias)*KT)*57.3, want=clamp(fpa+(a.ias<a.perf.vapp+15?4:2),-6,18); a.pitch=(a.pitch||0)+clamp(want-(a.pitch||0),-2.5*dt,2.5*dt); }
+  { const fpa=Math.atan2(a.vs/60*0.3048,Math.max(30,a.gs||a.ias)*KT)*57.3, fl=a.nav==='app'&&a.app&&a.app.est&&a.ldg&&(a.alt-(RW[a.app.end].elev||ELEV))*0.3048<18, want=fl?(a.perf.w==='L'?6:5.5):clamp(fpa+(a.ias<a.perf.vapp+15?5:2),-6,18); a.pitch=(a.pitch||0)+clamp(want-(a.pitch||0),-2.5*dt,(fl?3:2.5)*dt); }   // flare below ~60 ft: nose up so the main gear touches first
   if(a.gearUp&&a.gearDown&&a.vs>100&&a.alt>ELEV+50){ a.gearDown=false; a.gearUp=false; a.status='Pozitif tırmanış, gear up'; renderStrips(); renderFMS(); }
   // speed
   a.ias+=clamp(a.tgt.spd-a.ias,-1.2*dt,1.5*dt);
@@ -707,7 +707,7 @@ function straight(a,dt){ const S_=a.si, {R,along,xt}=rwyFrame(a,S_.end), hd=Math
 }
 function alertPilot(msg){ toast(msg,7000); try{ const el=document.getElementById('toast'); el.classList.add('alert'); setTimeout(()=>el.classList.remove('alert'),7000); }catch(e){} }
 function touchdown(a,R){ { const v=[a.pos[0]-R.thr[0],a.pos[1]-R.thr[1]], s=v[0]*R.u[0]+v[1]*R.u[1]; a.pos=[R.thr[0]+R.u[0]*s,R.thr[1]+R.u[1]*s]; }   // main wheels on the centreline
-  a.air=false; a.alt=R.elev; a.vs=0; a.nav='hdg'; a.mode='rollout'; a.hdg=R.qfu; a.rollEnd=R.end; a.rollS0=-rwyFrame(a,R.end).along; a.status='İndi '+R.end; a.ldg=false; a.ga=false; a.wentAround=false; renderStrips(); renderFMS(); toast(`${a.cs} ${R.end} pistine ${a.tdz||300} m'de indi`); a.tdz=null; }
+  a.air=false; a.alt=R.elev; a.vs=0; a.tdHold=1.5; a.nav='hdg'; a.mode='rollout'; a.hdg=R.qfu; a.rollEnd=R.end; a.rollS0=-rwyFrame(a,R.end).along; a.status='İndi '+R.end; a.ldg=false; a.ga=false; a.wentAround=false; renderStrips(); renderFMS(); toast(`${a.cs} ${R.end} pistine ${a.tdz||300} m'de indi`); a.tdz=null; }
 function goAround(a,why){ const R=RW[a.app?a.app.end:a.rwy]; a.nav='hdg'; a.tgt.hdg=R?R.qfu:a.hdg; a.tgt.alt=Math.max(a.alt+1000,ELEV+3000); a.tgt.spd=Math.max(a.ias,a.perf.vapp+25); a.app=null; a.ldg=false; a.tdz=null; a.cir=null; a.si=null;
   a.gearUp=a.perf.gear; a.ga=true; a.wentAround=true; a.climbLd=true; a.status='GO-AROUND'+(why?' ('+why+')':''); renderStrips(); renderFMS(); toast(`GO-AROUND: ${a.cs}${why?' · '+why:''}`); }
 function stepTakeoff(a,dt){
@@ -715,8 +715,9 @@ function stepTakeoff(a,dt){
   const v=hv(R.qfu); a.pos=[a.pos[0]+v[0]*a.ias*KT*dt,a.pos[1]+v[1]*a.ias*KT*dt]; a.hdg=R.qfu;
   // rotation: at VR the nose wheel lifts first and the aircraft keeps rolling on the main gear; it lifts off at the rotation attitude
   const rotTo=a.perf.w==='L'?8:a.perf.w==='M'?8.5:9;
-  if(a.ias>=a.perf.vr-2){ a.pitch=Math.min(rotTo,(a.pitch||0)+(a.perf.w==='L'?4:3)*dt); if(a.status.indexOf('Rotate')<0){ a.status='Rotate '+R.end; renderStrips(); } }
-  if(a.ias>=a.perf.vr&&a.pitch>=rotTo-0.6){ a.air=true; a.vs=300; a.mode='air'; a.climbLd=true; a.gearUp=a.perf.gear; a.lineClr=null; a.clr.cross=[]; a.nav='hdg'; a.tgt.hdg=R.qfu; a.tgt.spd=a.perf.w==='L'?80:210;
+  if(a.ias>=a.perf.vr){ a.pitch=Math.min(rotTo,(a.pitch||0)+(a.perf.w==='L'?3:2.2)*dt); if(a.status.indexOf('Rotate')<0){ a.status='Rotate '+R.end; renderStrips(); } }
+  if(a.ias>=a.perf.vr&&a.pitch>=rotTo-1.2){   // nose wheel up first, ~3 s on the main gear, then lift-off
+    a.air=true; a.vs=300; a.mode='air'; a.climbLd=true; a.gearUp=a.perf.gear; a.lineClr=null; a.clr.cross=[]; a.nav='hdg'; a.tgt.hdg=R.qfu; a.tgt.spd=a.perf.w==='L'?80:210;
     if(a.tgt.alt<ELEV+1500) a.tgt.alt=ELEV+(a.rules==='V'?1000:5000); a.status='Kalktı '+R.end; renderStrips(); toast(`${a.cs} ${R.end} pistinden kalktı`); }
 }
 function stepStopRun(a,dt){ a.ias=Math.max(0,a.ias-a.perf.dec*dt); const v=hv(a.hdg); a.pos=[a.pos[0]+v[0]*a.ias*KT*dt,a.pos[1]+v[1]*a.ias*KT*dt];
@@ -1064,7 +1065,7 @@ function simStep(dt){
   for(const a of TR){
     if(a.mode==='hold-taxi') continue;
     if(a.mode==='crash'){ stepCrash(a,dt); continue; }
-    if(!a.air&&a.mode!=='tkof'&&a.pitch) a.pitch=Math.max(0,a.pitch-2.5*dt);   // nose wheel comes down after touchdown
+    if(!a.air&&a.mode!=='tkof'&&a.pitch){ a.tdHold=(a.tdHold||0)-dt; if(a.tdHold<=0) a.pitch=Math.max(0,a.pitch-1.6*dt); }   // main gear first, nose wheel comes down ~1.5 s later
     if(a.path){ stepPath(a,dt); continue; }
     if(a.mode==='tkof') stepTakeoff(a,dt);
     else if(a.mode==='rto') stepStopRun(a,dt);
