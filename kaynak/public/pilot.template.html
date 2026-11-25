@@ -1080,7 +1080,10 @@ function setSimX(x){ SIMX=x; document.querySelectorAll('#mX [data-x]').forEach(b
 // a slow timer keeps it running while the tab is hidden and frames stop
 function simTick(){ const now=performance.now(); let dt=(now-simLast)/1000; if(dt<0.004) return; simLast=now; dt=Math.min(dt,1); for(let i=0;i<SIMX;i++) simStep(dt); broadcast(); if(now-lastIcon>=100){ lastIcon=now; iconState(); } }
 (function simRAF(){ simTick(); requestAnimationFrame(simRAF); })();
-setInterval(()=>{ if(performance.now()-simLast>120) simTick(); },100);
+// hidden / background tab (e.g. pilot and ATC open as two tabs in one window): the browser stops frames and slows
+// page timers to once a second, so traffic moved in 1 s jumps. A worker timer is not slowed, so it keeps the sim at ~30 Hz.
+try{ const w=new Worker(URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),33)'],{type:'text/javascript'})));
+  w.onmessage=()=>{ if(performance.now()-simLast>45) simTick(); }; }catch(e){ setInterval(()=>{ if(performance.now()-simLast>120) simTick(); },100); }
 // ---------- aircraft external lights (LGT-01..03): one source for pilot + tower ----------
 const LT={TX:1,LD:2,NAV:4,BCN:8,STB:16};
 function lightsOf(a){ if(a.kind!=='ac'||!a.eng||a.mode==='crash') return 0;
