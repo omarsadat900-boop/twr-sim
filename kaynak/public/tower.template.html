@@ -328,6 +328,14 @@ const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
   g.save(); g.beginPath(); for(const p of DATA.pavement){ p.forEach((q,i)=>{ const [x,y]=P(q); i?g.lineTo(x,y):g.moveTo(x,y); }); g.closePath(); } g.clip();
   g.strokeStyle='rgba(70,70,66,0.28)'; g.lineWidth=0.5; g.beginPath(); for(let x=0;x<TW;x+=7.5){ g.moveTo(x,0); g.lineTo(x,TH); } for(let y=0;y<TH;y+=7.5){ g.moveTo(0,y); g.lineTo(TW,y); } g.stroke(); g.restore();
   g.fillStyle='#55575a'; poly(t4Band(0,T4P.length-1,-88,0)); g.fill(); poly([T4.east[0],T4.east[1],[T4.east[1][0],T4.east[1][1]+88],[T4.east[0][0],T4.east[0][1]+88]]); g.fill();
+  // apron service road along the gates, under the bridges: two white edge lines and a dashed centre line
+  { const line=(d,dash,w)=>{ g.beginPath(); for(let i=0;i<T4P.length;i+=2){ const [x,y]=P(t4At(i,d)); i?g.lineTo(x,y):g.moveTo(x,y); } const [ex,ey]=P([T4.east[1][0],T4.east[1][1]-d]); g.lineTo(ex,ey);
+      g.setLineDash(dash); g.strokeStyle='#ecece6'; g.lineWidth=w/R; g.stroke(); g.setLineDash([]); };
+    line(-5,[],0.35); line(-19,[],0.35); line(-12,[4/R,4/R],0.25);
+    // equipment parking boxes between the bridges (white outline, hatched)
+    g.strokeStyle='rgba(236,236,230,0.8)'; g.lineWidth=0.25/R;
+    for(let i=20;i<T4P.length-20;i+=26){ const q=[t4At(i,-21),t4At(i+12,-21),t4At(i+12,-30),t4At(i,-30)]; poly(q); g.stroke();
+      for(let k=1;k<6;k++){ const a=t4At(i+k*2,-21), b=t4At(i+k*2+2,-30), [x1,y1]=P(a), [x2,y2]=P(b); g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.stroke(); } } }
   // landside: roads (asphalt, white edge lines) and the car park footprint
   const road=(pts,w)=>{ g.lineJoin='round'; g.lineCap='round'; g.beginPath(); pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); });
     g.strokeStyle='#e8e8e4'; g.lineWidth=(w+1.2)/R; g.stroke(); g.strokeStyle='#5f6266'; g.lineWidth=w/R; g.stroke(); g.setLineDash([3/R,6/R]); g.strokeStyle='#d8d8d0'; g.lineWidth=0.3/R; g.stroke(); g.setLineDash([]); };
@@ -455,12 +463,16 @@ if(DATA.buildings && DATA.buildings.length){
     for(let i=0;i<N-iV;i++) for(let j=0;j<2;j++){ const a=i*3+j, b=a+3; idx.push(a,b,a+1, a+1,b,b+1); }
     const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('color',new THREE.Float32BufferAttribute(col,3)); g.setIndex(idx); g.computeVertexNormals();
     const m=M2({vertexColors:true,side:THREE.DoubleSide}); scene.add(new THREE.Mesh(g,m)); }
-  { // "ESENBOĞA AIRPORT" on the main hall's apron face, above the wave roof
+  { // "ESENBOĞA AIRPORT" twice on the main hall's apron face, above the wave roof (as in the photos)
     const c=document.createElement('canvas'); c.width=2048; c.height=128; const x=c.getContext('2d'); x.fillStyle='#e9ecee'; x.fillRect(0,0,2048,128);
     x.fillStyle='#2b3a45'; x.font='bold 96px system-ui,Arial'; x.textAlign='center'; x.textBaseline='middle'; x.fillText('ESENBOĞA AIRPORT',1024,68);
-    const t=new THREE.CanvasTexture(c); t.anisotropy=renderer.capabilities.getMaxAnisotropy();
-    const im=Math.round((iV+N)/2), q=T4P[im], at=t4At(im,49.6), geo=new THREE.PlaneGeometry(64,4); const m=new THREE.Mesh(geo,M2({map:t}));
-    m.position.set(at[0],20.5,-at[1]); m.rotation.y=Math.atan2(-q.n[0],q.n[1]); scene.add(m); }
+    const t=new THREE.CanvasTexture(c); t.anisotropy=renderer.capabilities.getMaxAnisotropy(); const sm=M2({map:t});
+    for(const fr of [0.3,0.78]){ const im=Math.round(iV+(N-iV)*fr), q=T4P[im], at=t4At(im,49.6); const m=new THREE.Mesh(new THREE.PlaneGeometry(56,3.6),sm);
+      m.position.set(at[0],20.5,-at[1]); m.rotation.y=Math.atan2(-q.n[0],q.n[1]); scene.add(m); } }
+  { // roof skylights: rows of glass panels along the main hall and the south-west wing
+    const sg=M2({color:'#5d8a91'}), geo=new THREE.BoxGeometry(3.2,0.5,6); const rows=[[iV,N,[66,84,102],24.1],[iH,iV,[40,62,84,104],15.1]];
+    for(const [i0,i1,ds,hy] of rows) for(const d of ds) for(let i=i0+4;i<i1-4;i+=10){ const p0=t4At(i-3,d), p1=t4At(i+3,d), m=new THREE.Mesh(geo,sg);
+      m.position.set((p0[0]+p1[0])/2,hy,-(p0[1]+p1[1])/2); m.rotation.y=Math.atan2(p1[0]-p0[0],-(p1[1]-p0[1])); scene.add(m); } }
   ext(T4.park,0,13,[parkTop,parkM]);                                                                         // multi-storey car park
   // AIP buildings that the traced terminal and car park replace
   const inside=(p,poly)=>{ let c=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){ const a=poly[i],b=poly[j]; if(((a[1]>p[1])!==(b[1]>p[1]))&&(p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])) c=!c; } return c; };

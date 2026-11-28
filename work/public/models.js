@@ -237,30 +237,42 @@ const MODELS = (()=>{
       const sp=glow(c); sp.position.copy(m.position); sp.position.y+=0.2; g.add(sp); fl.push({m,on,off,sp,ph:i%2?0.5:0,rate:rate||2.2}); }); }
   function wheelsOn(g,xs,zs,r,w){ for(const z of zs) for(const x of xs){ const wh=wheel(r,w); wh.position.set(x,r,z); g.add(wh); } }
   const V={
-    fire(){ // ARFF 6x6, red, roof turret, white stripes
+    fire(){ // ARFF crash tender (Rosenbauer Panther style): long red body, sloped glazed cab, roof and bumper turrets, roller-shutter lockers, 6x6
       const g=new THREE.Group(), fl=[], red=M('#c8161d');
-      const cab=box(2.9,2.4,2.6,red); cab.position.set(0,2.0,-4.6); g.add(cab);
-      const ws=box(2.7,1.0,0.1,M(GLASS)); ws.position.set(0,2.6,-5.92); g.add(ws);
-      const bd=box(3.0,2.8,7.6,red); bd.position.set(0,2.3,0.6); g.add(bd);
-      const st=box(3.02,0.18,7.6,M(WHITE)); st.position.set(0,1.6,0.6); g.add(st);
-      const tur=cyl(0.12,0.18,2.2,8,M(GREY)); tur.position.set(0,3.6,-5.0); g.add(tur);
-      wheelsOn(g,[-1.3,1.3],[-4.3,1.2,3.4],0.7,0.6); lightBar(g,3.3,-4.2,2.4,['#0a3cff','#ff0010','#0a3cff','#ff0010'],fl,2.5);
+      const ch=box(2.9,0.7,11.2,M(DARK)); ch.position.set(0,1.05,0.2); g.add(ch);
+      const cab=box(2.95,2.3,3.0,red); cab.position.set(0,2.35,-4.2); g.add(cab);
+      const ws=box(2.8,1.25,0.12,M(GLASS)); ws.position.set(0,2.85,-5.72); ws.rotation.x=-0.28; g.add(ws);
+      for(const sd of [-1,1]){ const sw=box(0.06,1.0,2.2,M(GLASS)); sw.position.set(sd*1.49,2.9,-4.2); g.add(sw); }
+      const bd=box(3.0,2.75,7.8,red); bd.position.set(0,2.55,1.65); g.add(bd);
+      for(const sd of [-1,1]) for(let i=0;i<4;i++){ const sh=box(0.04,1.7,1.6,M('#b8bec4')); sh.position.set(sd*1.52,2.45,-1.3+i*1.95); g.add(sh); }
+      const st=box(3.04,0.22,11,M('#f5d300')); st.position.set(0,1.45,0.2); g.add(st);
+      const tur=cyl(0.16,0.22,2.4,8,M(GREY)); tur.position.set(0,4.15,-4.3); tur.rotation.x=0.15; g.add(tur);
+      const tb=box(0.9,0.5,0.9,M(GREY)); tb.position.set(0,3.75,-3.9); g.add(tb);
+      const bt=cyl(0.1,0.14,1.4,8,M(GREY)); bt.position.set(0,1.0,-6.3); g.add(bt);
+      const lad=box(0.6,0.12,6,M(GREY)); lad.position.set(0.9,3.98,1.6); g.add(lad);
+      wheelsOn(g,[-1.3,1.3],[-3.9,1.3,3.6],0.72,0.62); lightBar(g,3.62,-4.4,2.4,['#0a3cff','#ff0010','#0a3cff','#ff0010'],fl,2.5);
       g.userData={flashers:fl,lights:{}}; return g; },
-    police(){ // electric SUV, white/blue, blue-red bar
+    police(){ // airport police SUV: white with navy/blue band and POLİS lettering, blue-red bar
       const g=new THREE.Group(), fl=[];
-      const b=box(1.9,0.9,4.6,M(WHITE)); b.position.y=0.85; g.add(b);
-      const up=box(1.75,0.65,2.6,M(WHITE)); up.position.set(0,1.6,0.2); g.add(up);
-      const gl=box(1.77,0.45,2.62,M(GLASS)); gl.position.set(0,1.62,0.2); g.add(gl);
-      const bl=box(1.92,0.32,3.0,M('#1f4fc2')); bl.position.set(0,0.85,0.3); g.add(bl);
-      wheelsOn(g,[-0.85,0.85],[-1.45,1.45],0.38,0.3); lightBar(g,2.0,0.1,1.2,['#0a3cff','#ff0010'],fl,3);
+      const side=canvasTex('polis_side',512,128,(c,W,H)=>{ c.fillStyle='#f4f5f6'; c.fillRect(0,0,W,H); c.fillStyle='#14306e'; c.fillRect(0,H*0.45,W,H*0.28); c.fillStyle='#2a6fd6'; c.fillRect(0,H*0.73,W,H*0.07);
+        c.fillStyle='#ffffff'; c.font='bold 40px Arial'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('POLİS',W*0.5,H*0.6); });
+      const sm=new THREE.MeshLambertMaterial({map:side});
+      const b=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.95,4.7),[sm,sm,M(WHITE),M(DARK),M(WHITE),M(WHITE)]); b.position.y=0.85; g.add(b);
+      const up=box(1.78,0.7,2.7,M(WHITE)); up.position.set(0,1.65,0.25); g.add(up);
+      const gl=box(1.8,0.48,2.72,M(GLASS)); gl.position.set(0,1.67,0.25); g.add(gl);
+      const hood=box(1.92,0.06,1.3,M('#14306e')); hood.position.set(0,1.34,-1.75); g.add(hood);
+      wheelsOn(g,[-0.85,0.85],[-1.5,1.5],0.4,0.3); lightBar(g,2.08,0.0,1.3,['#0a3cff','#ff0010'],fl,3);
       g.userData={flashers:fl,lights:{}}; return g; },
-    ambulance(){ // high-roof van, white with red band
+    ambulance(){ // 112 ambulance van: white, red/yellow battenburg band, AMBULANS on the front, high roof
       const g=new THREE.Group(), fl=[];
-      const b=box(2.0,2.4,5.6,M(WHITE)); b.position.set(0,1.55,0.3); g.add(b);
-      const hood=box(1.9,0.9,0.9,M(WHITE)); hood.position.set(0,0.85,-2.85); g.add(hood);
-      const ws=box(1.8,0.7,0.1,M(GLASS)); ws.position.set(0,1.75,-2.48); g.add(ws);
-      const rb=box(2.02,0.3,5.6,M('#d81f26')); rb.position.set(0,1.2,0.3); g.add(rb);
-      wheelsOn(g,[-0.9,0.9],[-2.0,1.9],0.38,0.3); lightBar(g,2.85,-2.1,1.4,['#0a3cff','#ff0010','#0a3cff'],fl,3);
+      const side=canvasTex('amb_side',512,256,(c,W,H)=>{ c.fillStyle='#f6f6f4'; c.fillRect(0,0,W,H); for(let i=0;i<16;i++){ c.fillStyle=i%2?'#e01b22':'#ffd400'; c.fillRect(i*W/16,H*0.52,W/16,H*0.16); }
+        c.fillStyle='#e01b22'; c.font='bold 56px Arial'; c.textAlign='center'; c.fillText('112',W*0.7,H*0.4); c.fillStyle='#1c4aa8'; c.font='bold 30px Arial'; c.fillText('ACİL',W*0.3,H*0.4); });
+      const front=canvasTex('amb_front',256,128,(c,W,H)=>{ c.fillStyle='#f6f6f4'; c.fillRect(0,0,W,H); c.save(); c.translate(W,0); c.scale(-1,1); c.fillStyle='#e01b22'; c.font='bold 44px Arial'; c.textAlign='center'; c.fillText('AMBULANS',W/2,H*0.6); c.restore(); });
+      const sm=new THREE.MeshLambertMaterial({map:side}), fm=new THREE.MeshLambertMaterial({map:front});
+      const b=new THREE.Mesh(new THREE.BoxGeometry(2.05,2.5,5.0),[sm,sm,M(WHITE),M(DARK),M(WHITE),M(WHITE)]); b.position.set(0,1.6,0.6); g.add(b);
+      const hood=new THREE.Mesh(new THREE.BoxGeometry(1.95,0.95,1.1),[M(WHITE),M(WHITE),fm,M(DARK),M(WHITE),M(WHITE)]); hood.position.set(0,0.95,-2.45); g.add(hood);
+      const ws=box(1.85,0.8,0.1,M(GLASS)); ws.position.set(0,1.85,-1.92); ws.rotation.x=-0.35; g.add(ws);
+      wheelsOn(g,[-0.92,0.92],[-2.1,2.0],0.4,0.3); lightBar(g,2.95,-1.6,1.5,['#0a3cff','#ff0010','#0a3cff'],fl,3);
       g.userData={flashers:fl,lights:{}}; return g; },
     follow(){ // yellow pickup with FOLLOW ME board and amber beacons
       const g=new THREE.Group(), fl=[], y=M('#f2c230');
