@@ -4671,23 +4671,39 @@ const PBBS=[];
     for(const k of [0.33,0.66]){ const q=[F[0]+(R[0]-F[0])*k,F[1]+(R[1]-F[1])*k]; const c=new THREE.Mesh(new THREE.BoxGeometry(0.6,deck,0.6),wf); c.position.set(q[0],deck/2,-q[1]); g.add(c); }
     const rot=new THREE.Mesh(new THREE.BoxGeometry(5.2,4.2,5.2),wf); rot.position.set(R[0],deck+1.8,-R[1]); rot.rotation.y=-h; g.add(rot);
     const rc=new THREE.Mesh(new THREE.BoxGeometry(1.4,deck,1.4),mat); rc.position.set(R[0],deck/2,-R[1]); g.add(rc);
-    const tun=new THREE.Mesh(new THREE.BoxGeometry(2.9,2.8,1),mat), cab=new THREE.Mesh(new THREE.BoxGeometry(4,3.1,3.2),glass), leg=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,1,8),dark);
-    const wheels=new THREE.Mesh(new THREE.BoxGeometry(3,0.9,1.2),dark); g.add(tun,cab,leg,wheels);
+    // telescopic tunnel: three nested sections (each a little smaller), cab with a dark rubber canopy, drive column and wheel bogie
+    const tm=new THREE.MeshLambertMaterial({color:'#e3e6e8'}), tm2=new THREE.MeshLambertMaterial({color:'#cfd4d8'}), tm3=new THREE.MeshLambertMaterial({color:'#bfc5ca'});
+    const tun=[new THREE.Mesh(new THREE.BoxGeometry(3.3,3.1,1),tm),new THREE.Mesh(new THREE.BoxGeometry(3.05,2.9,1),tm2),new THREE.Mesh(new THREE.BoxGeometry(2.8,2.7,1),tm3)];
+    const cab=new THREE.Group(); { const b=new THREE.Mesh(new THREE.BoxGeometry(4.2,3.1,3.6),tm); cab.add(b); const w=new THREE.Mesh(new THREE.BoxGeometry(4.3,1.0,3.7),glass); w.position.y=0.6; cab.add(w);
+      const bel=new THREE.Mesh(new THREE.BoxGeometry(3.4,3.3,0.9),dark); bel.position.z=-2.2; cab.add(bel); }
+    const leg=new THREE.Group(); for(const sx of [-1.1,1.1]){ const c=new THREE.Mesh(new THREE.BoxGeometry(0.45,1,0.45),dark); c.position.x=sx; leg.add(c); }
+    const wheels=new THREE.Group(); { const bb=new THREE.Mesh(new THREE.BoxGeometry(3.2,0.5,1.0),dark); bb.position.y=0.75; wheels.add(bb); for(const sx of [-1.3,1.3]){ const wh=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.5,12),dark); wh.rotation.z=Math.PI/2; wh.position.set(sx,0.5,0); wheels.add(wh); } }
+    g.add(...tun,cab,leg,wheels);
     const park=P(Math.max(4,Math.min(t-42,20)-14),15);   // retracted cab position: tunnel folded back toward the rotunda, outside the stand
-    PBBS.push({id:x.id,xy:x.xy,hdg:x.hdg,R,park,deck,cur:{p:park.slice(),h:deck},tun,cab,leg,wheels,f,l}); });
+    PBBS.push({id:x.id,xy:x.xy,hdg:x.hdg,R,park,deck,cur:{p:park.slice(),h:deck,yaw:null},tun,cab,leg,wheels,f,l}); });
 }
-function pbbFrame(dt){ const k=1-Math.exp(-dt*0.6);
-  for(const B of PBBS){ let goal=B.park, gh=B.deck;
-    objs.forEach(o=>{ if(o.kind!=='ac'||!o.r) return; if(Math.abs(((o.rh-B.hdg)%360+540)%360-180)>10) return; if(o.v&&Math.hypot(o.v[0],o.v[1])>0.3) return;
-      const S=(MODELS.SPEC&&MODELS.SPEC[o.type])||{L:38,R:2,gear:{h:2.6,nose:5}}, h=o.rh*Math.PI/180, no=S.L/2-(S.gear.nose||5);   // stand point = nose-wheel stop mark
-      if(Math.hypot(o.r[0]+Math.sin(h)*no-B.xy[0],o.r[1]+Math.cos(h)*no-B.xy[1])>4) return;
-      const k=o.g.scale.x||1, d=k*(S.L/2-Math.max(2.5,S.L*0.12)), side=k*(S.R||2)+1.9, c=[o.r[0],o.r[1]];   // forward left door of the drawn (scaled) aircraft; cab just off the fuselage
-      goal=[c[0]+B.f[0]*d+B.l[0]*side,c[1]+B.f[1]*d+B.l[1]*side]; gh=Math.max(1.8,k*((S.gear.h||2)+(S.R||2)*0.6)); });
+window.__pbbs=PBBS;
+function pbbFrame(dt){ const k=1-Math.exp(-dt*0.5);
+  for(const B of PBBS){ let goal=B.park, gh=B.deck, docked=false;
+    // an aircraft standing on this stand (nose wheel within 4 m of the stop mark, nose toward the terminal, not moving, no pushback tug)
+    objs.forEach(o=>{ if(o.kind!=='ac'||!o.r||o.tug) return; if(Math.abs(((o.rh-B.hdg)%360+540)%360-180)>10) return;
+      if(o.buf&&o.buf.length){ const v=o.buf[o.buf.length-1].v; if(v&&Math.hypot(v[0],v[1])>0.3) return; }
+      const S=(MODELS.SPEC&&MODELS.SPEC[o.type])||{L:38,R:2,gear:{h:2.6,nose:5}}, h=o.rh*Math.PI/180, no=S.L/2-(S.gear.nose||5), nw=[o.r[0]+Math.sin(h)*no,o.r[1]+Math.cos(h)*no];
+      if(Math.hypot(nw[0]-B.xy[0],nw[1]-B.xy[1])>4) return;
+      // the aircraft is drawn TRAFFIC_SCALE times larger, anchored on the nose wheel: its forward left door is at
+      // nose wheel + (nose-wheel-from-tip - door-from-tip) * scale, and the fuselage side is at radius * scale
+      const ks=o.g.scale.x||1, door=Math.max(2.5,S.L*0.12), d=ks*((S.gear.nose||5)-door), side=ks*(S.R||2)+2.4;
+      goal=[nw[0]+B.f[0]*d+B.l[0]*side,nw[1]+B.f[1]*d+B.l[1]*side]; gh=Math.max(1.8,ks*((S.gear.h||2)+(S.R||2)*0.55))-1.3; docked=true; });
     const c=B.cur; c.p[0]+=(goal[0]-c.p[0])*k; c.p[1]+=(goal[1]-c.p[1])*k; c.h+=(gh-c.h)*k;
-    const dx=c.p[0]-B.R[0], dy=c.p[1]-B.R[1], L=Math.max(4,Math.hypot(dx,dy)), yaw=Math.atan2(dx,-dy), mid=[(B.R[0]+c.p[0])/2,(B.R[1]+c.p[1])/2], hm=(B.deck+c.h)/2;
-    B.tun.scale.z=L; B.tun.position.set(mid[0],hm+1.5,-mid[1]); B.tun.rotation.set(Math.atan2(B.deck-c.h,L)*-1,yaw,0,'YXZ');
-    B.cab.position.set(c.p[0],c.h+1.5,-c.p[1]); B.cab.rotation.y=yaw;
-    const w=[B.R[0]+dx*0.72,B.R[1]+dy*0.72], wh=B.deck+(c.h-B.deck)*0.72; B.leg.scale.y=wh; B.leg.position.set(w[0],wh/2,-w[1]); B.wheels.position.set(w[0],0.45,-w[1]); B.wheels.rotation.y=yaw; }
+    const dx=c.p[0]-B.R[0], dy=c.p[1]-B.R[1], L=Math.max(6,Math.hypot(dx,dy)), yaw=Math.atan2(dx,-dy), pitch=Math.atan2(c.h-B.deck,L);
+    // three nested sections share the length; they slide over each other as the tunnel extends and retracts
+    const seg=L/3+1.2; B.tun.forEach((m,i)=>{ const a=Math.min(L-seg/2,(i+0.5)*(L/3)), q=[B.R[0]+dx*a/L,B.R[1]+dy*a/L], y=B.deck+(c.h-B.deck)*a/L;
+      m.scale.z=seg; m.position.set(q[0],y+1.5,-q[1]); m.rotation.set(-pitch,yaw,0,'YXZ'); });
+    // the cab turns to face the fuselage when docked, along the tunnel when parked
+    const cy=docked?Math.atan2(B.l[0],-B.l[1]):Math.atan2(-dx,dy);   // cab front (canopy, local -z) toward the fuselage / along the tunnel c.yaw=c.yaw==null?cy:c.yaw+((((cy-c.yaw)+Math.PI*3)%(Math.PI*2))-Math.PI)*k;
+    B.cab.position.set(c.p[0],c.h+1.5,-c.p[1]); B.cab.rotation.y=c.yaw;
+    const w=[B.R[0]+dx*0.72,B.R[1]+dy*0.72], wh=B.deck+(c.h-B.deck)*0.72;
+    B.leg.scale.y=wh; B.leg.children.forEach(m=>m.position.y=0.5); B.leg.position.set(w[0],0,-w[1]); B.leg.rotation.y=yaw; B.wheels.position.set(w[0],0,-w[1]); B.wheels.rotation.y=yaw; }
 }
 
 // ---------- aerodrome lighting at night (LGT-04) ----------
