@@ -772,7 +772,7 @@ function rect(a,u,n,from,to,half){ return [[a[0]+u[0]*from+n[0]*half,a[1]+u[1]*f
   [a[0]+u[0]*to-n[0]*half,a[1]+u[1]*to-n[1]*half],[a[0]+u[0]*from-n[0]*half,a[1]+u[1]*from-n[1]*half]]; }
 
 // drawn width factors (Omar: wider runways and taxiways, in proportion, so the bigger-drawn aircraft stay on the pavement in turns)
-const TWYW=1.6, RWYW=1.4;
+const TWYW=2.0, RWYW=1.4;   // 2.0 = same factor as TRAFFIC_SCALE (Omar 2026-11-28: taxiways wider)
 // aerodrome surface texture: grass + pavement + runway asphalt (1 m per texel)
 const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
 {
@@ -787,7 +787,7 @@ const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
   g.fillStyle='#8f8462'; for(const p of DATA.holes){ poly(p); g.fill(); }
   g.strokeStyle='#a3a29c'; g.lineJoin='round';
   g.lineCap='round'; for(const e of DATA.taxi.edges){ if(e.kind==='runway') continue; g.beginPath(); e.pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); g.lineWidth=(e.kind==='leadin'?16:23)*TWYW/R; g.stroke(); } g.lineCap='butt';
-  for(const l of (DATA.pave_lines||[])){ g.beginPath(); l.pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); g.lineWidth=l.w/R; g.stroke(); }
+  for(const l of (DATA.pave_lines||[])){ g.beginPath(); l.pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); }); g.lineWidth=l.w*TWYW/R; g.stroke(); }
   for(const r of DATA.runways){ const q=rwyGeom(r), hw=r.width/2*RWYW;
     g.fillStyle='#45484b'; poly(rect(q.a,q.u,q.n,-r.stopway,0,hw)); g.fill(); poly(rect(q.a,q.u,q.n,q.L,q.L+r.stopway,hw)); g.fill();
     g.fillStyle='#38393b'; poly(rect(q.a,q.u,q.n,0,q.L,hw)); g.fill(); }
@@ -831,6 +831,7 @@ function nearestDir(p){ let bd=1e9, dir=[1,0];
       if(d<bd){ bd=d; const L=Math.sqrt(L2); dir=[vx/L,vy/L]; } } }
   return dir; }
 function dashedAcross(c,n,half,w,h){ for(let s=-half; s<half; s+=3.6){ const e=Math.min(half,s+2); seg('yellow',[c[0]+n[0]*s,c[1]+n[1]*s],[c[0]+n[0]*e,c[1]+n[1]*e],w,h); } }
+const HPW=11.5*TWYW;   // holding position bars span the drawn (widened) taxiway
 for(const hp of DATA.holding_points){
   let d=nearestDir(hp.xy); const n=[-d[1],d[0]];
   if(hp.type==='runway'){   // pattern A: 2 solid + 2 dashed, dashed side toward the runway
@@ -838,8 +839,8 @@ for(const hp of DATA.holding_points){
     if(r){ const g=rwyGeom(r), v=[hp.xy[0]-g.a[0],hp.xy[1]-g.a[1]], side=v[0]*g.n[0]+v[1]*g.n[1], toR=[-g.n[0]*Math.sign(side),-g.n[1]*Math.sign(side)];
       if(d[0]*toR[0]+d[1]*toR[1]<0) d=[-d[0],-d[1]]; }
     [[-1.35,'s'],[-0.45,'s'],[0.45,'d'],[1.35,'d']].forEach(([o,k])=>{ const c=[hp.xy[0]+d[0]*o,hp.xy[1]+d[1]*o];
-      if(k==='s') seg('yellow',[c[0]-n[0]*11.5,c[1]-n[1]*11.5],[c[0]+n[0]*11.5,c[1]+n[1]*11.5],0.45,0.12); else dashedAcross(c,n,11.5,0.45,0.12); });
-  } else dashedAcross(hp.xy,n,11.5,0.45,0.12);   // intermediate holding position
+      if(k==='s') seg('yellow',[c[0]-n[0]*HPW,c[1]-n[1]*HPW],[c[0]+n[0]*HPW,c[1]+n[1]*HPW],0.45,0.12); else dashedAcross(c,n,HPW,0.45,0.12); });
+  } else dashedAcross(hp.xy,n,HPW,0.45,0.12);   // intermediate holding position
 }
 for(const [col,hex] of [['white','#f2f2ee'],['yellow','#f1c12b']]){
   const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(buf[col],3));

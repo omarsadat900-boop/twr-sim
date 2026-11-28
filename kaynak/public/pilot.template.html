@@ -1138,7 +1138,7 @@ function draw(){
   if(s>0.004){
     ctx.fillStyle='#8f9499'; DATA.pavement.forEach(p=>{poly(p);ctx.fill();});
     ctx.fillStyle='#1e2a23'; DATA.holes.forEach(p=>{poly(p);ctx.fill();});
-    { ctx.strokeStyle='#8f9499'; ctx.lineJoin='round'; ctx.lineCap='round'; const EL=(window.EDH&&EDH.on)?EDH.L.edges:EDGES; for(const e of EL){ if(e.kind==='runway') continue; ctx.lineWidth=Math.max((e.kind==='leadin'?16:23)*1.6*s,(e.kind==='leadin'?16:23)/60*RWMINPX*1.15); line(e.pts); ctx.stroke(); } ctx.lineCap='butt'; }
+    { ctx.strokeStyle='#8f9499'; ctx.lineJoin='round'; ctx.lineCap='round'; const EL=(window.EDH&&EDH.on)?EDH.L.edges:EDGES; for(const e of EL){ if(e.kind==='runway') continue; ctx.lineWidth=Math.max((e.kind==='leadin'?16:23)*2.0*s,(e.kind==='leadin'?16:23)/60*RWMINPX*1.15); line(e.pts); ctx.stroke(); } ctx.lineCap='butt'; }
     ctx.strokeStyle='#8f9499'; ctx.lineCap='butt'; for(const l of (DATA.pave_lines||[])){ line(l.pts); ctx.lineWidth=l.w*s; ctx.stroke(); } ctx.lineCap='round';
     if(DATA.buildings&&s>0.05){ ctx.lineWidth=1; DATA.buildings.forEach(b=>{poly(b.pts);ctx.fillStyle='#4f7fb3';ctx.fill();ctx.strokeStyle='#22405f';ctx.stroke();}); }
     for(const r of DATA.runways){ const a=r.thr[r.ends[0]].xy,b=r.thr[r.ends[1]].xy,L=dist(a,b),n=[-(b[1]-a[1])/L*r.width/2,(b[0]-a[0])/L*r.width/2];
