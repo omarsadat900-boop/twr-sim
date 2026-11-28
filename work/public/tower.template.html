@@ -270,7 +270,7 @@ renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio||1));
 const scene=new THREE.Scene();
 const HAZE=new THREE.Color('#c3ccd3');
 const NIGHT_MATS=[]; let HEMI=null, SUN=null;   // darkened at night
-scene.fog=new THREE.Fog(HAZE, 6000, 2*10*NM);
+scene.fog=new THREE.Fog(HAZE, 8000, 60000);   // far enough for the mountain ranges around Ankara to show through the haze
 const camera=new THREE.PerspectiveCamera(55, 1, 1, 80000);
 camera.rotation.order='YXZ';
 const FOV=55;
@@ -283,9 +283,31 @@ const sky=(()=>{ const g=new THREE.SphereGeometry(70000,32,16);
     fragmentShader:'uniform vec3 top; uniform vec3 hor; varying vec3 vP; void main(){ float t=pow(clamp(vP.y,0.0,1.0),0.45); gl_FragColor=vec4(mix(hor,top,t),1.0); }' });
   const s=new THREE.Mesh(g,m); scene.add(s); return s; })();
 
-// outer ground beyond 10 NM
-{ const g=new THREE.PlaneGeometry(2*22*NM,2*22*NM); g.rotateX(-Math.PI/2);
-  const p=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:'#8c8162'})); p.position.set(TOWER.x,-0.6,-TOWER.y); scene.add(p); NIGHT_MATS.push(p.material); }
+// terrain around the aerodrome: real elevation (data/terrain.json, AWS Terrain Tiles / SRTM), 120 x 120 km, denser near the
+// field. Heights are relative to the aerodrome (3125 ft); inside the aerodrome surface it stays just under the ground texture and
+// blends to the real hills over 1.5 km. Unlit, with its own hill shading, so it matches the aerodrome ground colour.
+const TERR=__TERRAIN__;
+function terrainMesh(T,X0,X1,Y0,Y1){
+  const n=T.n, b=atob(T.h), u8=new Uint8Array(b.length); for(let i=0;i<b.length;i++) u8[i]=b.charCodeAt(i); const H=new Int16Array(u8.buffer);
+  const E0=DATA.elev_ft*0.3048, ax=[]; for(let i=0;i<n;i++){ const t=-1+2*i/(n-1); ax.push(Math.sign(t)*T.r*Math.pow(Math.abs(t),T.p)); }
+  const pos=new Float32Array(n*n*3), col=new Float32Array(n*n*3), hh=new Float32Array(n*n);
+  const sm=(a,b,x)=>{ const t=Math.max(0,Math.min(1,(x-a)/(b-a))); return t*t*(3-2*t); };
+  let seed=11; const rnd=()=>{ seed=(seed*16807)%2147483647; return seed/2147483647; };
+  for(let j=0;j<n;j++) for(let i=0;i<n;i++){ const k=j*n+i, x=T.cx+ax[i], y=T.cy+ax[j];
+    const d=Math.max(X0-x,x-X1,Y0-y,y-Y1);                 // >0 outside the aerodrome rectangle
+    const hr=H[k]-E0, w=sm(150,1650,d); const h=-2.5*(1-w)+Math.max(-2.5,hr)*w+(hr<-2.5?(hr+2.5)*w:0);
+    hh[k]=h; pos[k*3]=x; pos[k*3+1]=h; pos[k*3+2]=-y; }
+  const Ls=[-0.45,0.8,0.4], Ll=Math.hypot(...Ls), base=new THREE.Color('#8f8462'), steppe=new THREE.Color('#a39466'), field=new THREE.Color('#8a875a'), rock=new THREE.Color('#7d6a52'), high=new THREE.Color('#a79f92'), c=new THREE.Color();
+  for(let j=0;j<n;j++) for(let i=0;i<n;i++){ const k=j*n+i, i0=Math.max(0,i-1), i1=Math.min(n-1,i+1), j0=Math.max(0,j-1), j1=Math.min(n-1,j+1);
+    const dx=(hh[j*n+i1]-hh[j*n+i0])/((ax[i1]-ax[i0])||1), dy=(hh[j1*n+i]-hh[j0*n+i])/((ax[j1]-ax[j0])||1);
+    const nn=[-dx,1,dy], nl=Math.hypot(...nn), shade=Math.max(0.55,Math.min(1.3,((nn[0]*Ls[0]+nn[1]*Ls[1]+nn[2]*Ls[2])/nl)/(Ls[1]/Ll)/Ll));
+    const h=hh[k], slope=Math.hypot(dx,dy), x=pos[k*3], y=-pos[k*3+2], d=Math.max(X0-x,x-X1,Y0-y,y-Y1);
+    c.copy(h<-40?field:steppe); if(h>150) c.lerp(rock,Math.min(1,(h-150)/350)); if(slope>0.18) c.lerp(rock,Math.min(0.7,(slope-0.18)*3)); if(h>750) c.lerp(high,Math.min(1,(h-750)/400));
+    c.lerp(base,1-sm(300,4000,d)); c.multiplyScalar(shade*(0.94+rnd()*0.12));
+    col[k*3]=c.r; col[k*3+1]=c.g; col[k*3+2]=c.b; }
+  const idx=[]; for(let j=0;j<n-1;j++) for(let i=0;i<n-1;i++){ const a=j*n+i, b2=a+1, c2=a+n, d2=c2+1; idx.push(a,b2,c2, b2,d2,c2); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(pos,3)); g.setAttribute('color',new THREE.BufferAttribute(col,3)); g.setIndex(idx);
+  const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,color:'#ffffff'})); scene.add(m); NIGHT_MATS.push(m.material); return m; }
 
 function rwyGeom(r){ const a=r.thr[r.ends[0]].xy, b=r.thr[r.ends[1]].xy; const L=Math.hypot(b[0]-a[0],b[1]-a[1]);
   const u=[(b[0]-a[0])/L,(b[1]-a[1])/L]; return {a,b,L,u,n:[-u[1],u[0]]}; }
@@ -344,6 +366,7 @@ const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
   const tex=new THREE.CanvasTexture(c); tex.anisotropy=renderer.capabilities.getMaxAnisotropy(); tex.minFilter=THREE.LinearMipmapLinearFilter;
   const geo=new THREE.PlaneGeometry(X1-X0,Y1-Y0); geo.rotateX(-Math.PI/2);
   const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex})); m.position.set((X0+X1)/2,0,-(Y0+Y1)/2); scene.add(m); NIGHT_MATS.push(m.material);
+  if(TERR) terrainMesh(TERR,X0,X1,Y0,Y1); else { const g2=new THREE.PlaneGeometry(2*22*NM,2*22*NM); g2.rotateX(-Math.PI/2); const p=new THREE.Mesh(g2,new THREE.MeshBasicMaterial({color:'#8c8162'})); p.position.set(TOWER.x,-0.6,-TOWER.y); scene.add(p); NIGHT_MATS.push(p.material); }
 }
 
 // painted markings as geometry (sharp at any distance)
@@ -798,8 +821,8 @@ function weatherFrame(dt,now){
   if(NIGHT_ON!==lastNight){ lastNight=NIGHT_ON; for(const m of NIGHT_MATS){ if(!m.userData.day) m.userData.day='#'+m.color.getHexString(); m.color.set(m.userData.day); if(NIGHT_ON) m.color.multiplyScalar(0.18); }
     if(HEMI) HEMI.intensity=NIGHT_ON?0.12:0.75; if(SUN) SUN.intensity=NIGHT_ON?0.04:0.55; }
   nightFrame(NIGHT_ON,active||'03R');
-  const vis=Math.max(200,+I.vis||9999), far=vis>=9999?2*10*NM:Math.max(400,vis*1.6);
-  scene.fog.far=far; scene.fog.near=Math.min(6000,far*0.25);
+  const vis=Math.max(200,+I.vis||9999), far=vis>=9999?60000:Math.max(400,vis*1.6);
+  scene.fog.far=far; scene.fog.near=Math.min(8000,far*0.2);
   fc.clearRect(0,0,W,H);
   if(wet){ fc.fillStyle=`rgba(25,30,36,${0.10*k+dark*0.18})`; fc.fillRect(0,0,W,H); }
   // particles
