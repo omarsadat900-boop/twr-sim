@@ -294,6 +294,18 @@ function rect(a,u,n,from,to,half){ return [[a[0]+u[0]*from+n[0]*half,a[1]+u[1]*f
 
 // drawn width factors (Omar: wider runways and taxiways, in proportion, so the bigger-drawn aircraft stay on the pavement in turns)
 const TWYW=2.0, RWYW=1.4;   // 2.0 = same factor as TRAFFIC_SCALE (Omar 2026-11-28: taxiways wider)
+// ---------- Apron 4 passenger terminal and landside (Omar 2026-11-28: "fotoğraftaki gibi"), traced from the satellite
+// image he sent, registered on the 18 jet bridges (about ±7 m). pier = apron-side facade line, SW end -> NE.
+const T4={"pier": [[486.4, -116.7], [497.8, -79.2], [521.1, -48.6], [547.0, -14.6], [572.9, 19.4], [598.7, 48.3], [624.6, 76.3], [650.4, 104.3], [684.8, 129.7], [719.2, 158.6], [736.4, 172.1], [770.8, 196.7], [805.1, 213.5], [848.0, 232.9], [890.9, 245.4], [933.7, 254.4], [976.5, 260.1], [1010.7, 261.6]], "east": [[1010.8, 277.8], [1132.2, 276.9], [1132.0, 254.7], [1010.6, 255.6]], "roads": {"front": [[1061.0, 124.4], [975.5, 125.0], [889.9, 117.1], [804.3, 103.2], [735.8, 85.8], [684.3, 60.5], [649.9, 31.7], [624.0, -2.3], [604.9, -43.2], [589.1, -94.4], [573.4, -145.6], [562.7, -196.8]], "loopR": [[1005.3, 118.8], [1090.8, 113.1], [1137.6, 81.1], [1154.4, 38.2], [1141.3, -0.1], [1111.2, -19.6]], "main": [[631.2, -190.5], [716.9, -155.2], [811.2, -121.7], [896.9, -92.4], [982.6, -63.1], [1068.3, -33.8], [1154.0, -4.5], [1222.6, 20.6], [1291.2, 45.8]], "loopW": [[769.6, 35.9], [718.2, 14.1], [679.4, -22.4], [657.7, -65.0], [661.7, -107.8], [695.8, -125.1], [751.4, -121.2], [811.3, -104.6]]}, "park": [[769.5, 19.7], [975.1, 78.0], [978.5, -46.0], [811.5, -83.2]]};
+const T4P=(()=>{ // facade line resampled every 1 m, with the landside normal
+  let P=T4.pier; for(let k=0;k<2;k++){ const Q=[P[0]]; for(let i=0;i<P.length-1;i++){ const a=P[i],b=P[i+1]; Q.push([a[0]*0.75+b[0]*0.25,a[1]*0.75+b[1]*0.25],[a[0]*0.25+b[0]*0.75,a[1]*0.25+b[1]*0.75]); } Q.push(P[P.length-1]); P=Q; }
+  const out=[]; let acc=0; for(let i=0;i<P.length-1;i++){ const a=P[i],b=P[i+1],L=Math.hypot(b[0]-a[0],b[1]-a[1]); for(let t=acc;t<L;t+=1){ const k=t/L; out.push([a[0]+(b[0]-a[0])*k,a[1]+(b[1]-a[1])*k]); } acc=(Math.ceil(L-acc)+acc)-L; }
+  out.push(P[P.length-1].slice());
+  return out.map((p,i)=>{ const a=out[Math.max(0,i-3)], b=out[Math.min(out.length-1,i+3)], dx=b[0]-a[0], dy=b[1]-a[1], L=Math.hypot(dx,dy)||1; return {p,n:[dy/L,-dx/L]}; }); })();
+const t4At=(i,d)=>{ const q=T4P[Math.max(0,Math.min(T4P.length-1,i))]; return [q.p[0]+q.n[0]*d,q.p[1]+q.n[1]*d]; };
+const t4Idx=x=>{ let b=0; for(let i=0;i<T4P.length;i++) if(T4P[i].p[0]<=x) b=i; return b; };   // last sample with x <= given world x
+// closed outline of the band i0..i1 between offsets d0 (apron side) and d1 (landside)
+function t4Band(i0,i1,d0,d1,step){ step=step||2; const A=[],B=[]; for(let i=i0;i<=i1;i+=step){ A.push(t4At(i,d0)); B.push(t4At(i,d1)); } A.push(t4At(i1,d0)); B.push(t4At(i1,d1)); return A.concat(B.reverse()); }
 // aerodrome surface texture: grass + pavement + runway asphalt (1 m per texel)
 const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
 {
@@ -312,6 +324,15 @@ const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
   for(const r of DATA.runways){ const q=rwyGeom(r), hw=r.width/2*RWYW;
     g.fillStyle='#45484b'; poly(rect(q.a,q.u,q.n,-r.stopway,0,hw)); g.fill(); poly(rect(q.a,q.u,q.n,q.L,q.L+r.stopway,hw)); g.fill();
     g.fillStyle='#38393b'; poly(rect(q.a,q.u,q.n,0,q.L,hw)); g.fill(); }
+  // concrete slab joints on all pavement (7.5 m slabs), then the dark asphalt strip in front of the Apron 4 gates
+  g.save(); g.beginPath(); for(const p of DATA.pavement){ p.forEach((q,i)=>{ const [x,y]=P(q); i?g.lineTo(x,y):g.moveTo(x,y); }); g.closePath(); } g.clip();
+  g.strokeStyle='rgba(70,70,66,0.28)'; g.lineWidth=0.5; g.beginPath(); for(let x=0;x<TW;x+=7.5){ g.moveTo(x,0); g.lineTo(x,TH); } for(let y=0;y<TH;y+=7.5){ g.moveTo(0,y); g.lineTo(TW,y); } g.stroke(); g.restore();
+  g.fillStyle='#55575a'; poly(t4Band(0,T4P.length-1,-88,0)); g.fill(); poly([T4.east[0],T4.east[1],[T4.east[1][0],T4.east[1][1]+88],[T4.east[0][0],T4.east[0][1]+88]]); g.fill();
+  // landside: roads (asphalt, white edge lines) and the car park footprint
+  const road=(pts,w)=>{ g.lineJoin='round'; g.lineCap='round'; g.beginPath(); pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.strokeStyle='#e8e8e4'; g.lineWidth=(w+1.2)/R; g.stroke(); g.strokeStyle='#5f6266'; g.lineWidth=w/R; g.stroke(); g.setLineDash([3/R,6/R]); g.strokeStyle='#d8d8d0'; g.lineWidth=0.3/R; g.stroke(); g.setLineDash([]); };
+  road(T4.roads.main,22); road(T4.roads.front,16); road(T4.roads.loopR,10); road(T4.roads.loopW,10);
+  g.fillStyle='#7d7f80'; poly(T4.park); g.fill();
   const tex=new THREE.CanvasTexture(c); tex.anisotropy=renderer.capabilities.getMaxAnisotropy(); tex.minFilter=THREE.LinearMipmapLinearFilter;
   const geo=new THREE.PlaneGeometry(X1-X0,Y1-Y0); geo.rotateX(-Math.PI/2);
   const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex})); m.position.set((X0+X1)/2,0,-(Y0+Y1)/2); scene.add(m); NIGHT_MATS.push(m.material);
@@ -404,25 +425,53 @@ if(DATA.buildings && DATA.buildings.length){
   HEMI=new THREE.HemisphereLight('#e6eef5','#7a7058',0.75); scene.add(HEMI);
   const sun=new THREE.DirectionalLight('#ffffff',0.55); sun.position.set(-0.5,1,0.6); scene.add(sun); SUN=sun;
   const wall=new THREE.MeshLambertMaterial({color:'#c9c4b8'}), roof=new THREE.MeshLambertMaterial({color:'#8d939a'});
-  // Apron 4 passenger terminal (B40): glass curtain wall with mullions and floor bands, light roof with an overhanging canopy
-  const TERM={B40:1};
   const tTex=(w,h,paint,rx,ry)=>{ const c=document.createElement('canvas'); c.width=w; c.height=h; paint(c.getContext('2d'),w,h);
     const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); t.anisotropy=renderer.capabilities.getMaxAnisotropy(); return t; };
-  const glassT=tTex(256,256,(g,W,H)=>{ const gr=g.createLinearGradient(0,0,0,H); gr.addColorStop(0,'#7fb2c4'); gr.addColorStop(1,'#3f7488'); g.fillStyle=gr; g.fillRect(0,0,W,H);
-      g.fillStyle='#d9dee2'; for(let x=0;x<W;x+=32) g.fillRect(x,0,3,H); g.fillRect(0,0,W,10); g.fillRect(0,H/2-4,W,8); },1/8,1/9);   // one tile = 8 m wide, 2 floors of 4.5 m
-  const roofT=tTex(256,256,(g,W,H)=>{ g.fillStyle='#cfd4d8'; g.fillRect(0,0,W,H); g.strokeStyle='#aab1b7'; g.lineWidth=2; for(let x=0;x<W;x+=16){ g.beginPath(); g.moveTo(x,0); g.lineTo(x,H); g.stroke(); } },1/40,1/40);
-  const glassM=new THREE.MeshLambertMaterial({map:glassT}), roofM=new THREE.MeshLambertMaterial({map:roofT}), canopyM=new THREE.MeshLambertMaterial({color:'#d9dde0',side:THREE.DoubleSide});
+  // ---- Apron 4 passenger terminal, as in Omar's photos: a glass pier along the gates with a white roof edge, a wave-shaped
+  // greenish glass roof behind it, the tall main hall with "ESENBOĞA AIRPORT" on its apron face, a glass canopy on the landside,
+  // and the multi-storey car park. All outlines follow the satellite trace (T4).
+  const pierGlass=tTex(256,256,(g,W,H)=>{ const gr=g.createLinearGradient(0,0,0,H); gr.addColorStop(0,'#9cc4bb'); gr.addColorStop(1,'#4f7f78'); g.fillStyle=gr; g.fillRect(0,0,W,H);
+      g.fillStyle='#eef1f2'; for(let x=0;x<W;x+=21) g.fillRect(x,0,3,H); g.fillRect(0,0,W,22); g.fillRect(0,H*0.55,W,7); g.fillRect(0,H-6,W,6); },1/6,1/13);
+  const hallGlass=tTex(256,256,(g,W,H)=>{ g.fillStyle='#e9ecee'; g.fillRect(0,0,W,H); g.fillStyle='#33464f'; g.fillRect(0,H*0.42,W,H*0.5);
+      g.fillStyle='#dfe4e6'; for(let x=0;x<W;x+=32) g.fillRect(x,H*0.42,3,H*0.5); },1/10,1/26);
+  const ribRoof=tTex(128,128,(g,W,H)=>{ g.fillStyle='#e4e7e9'; g.fillRect(0,0,W,H); g.fillStyle='#b9c0c5'; for(let x=0;x<W;x+=16) g.fillRect(x,0,5,H); },1/8,1/8);
+  const parkT=tTex(256,256,(g,W,H)=>{ g.fillStyle='#b9bbb8'; g.fillRect(0,0,W,H); g.fillStyle='#3d4246'; for(let y=20;y<H;y+=64) g.fillRect(0,y,W,30); },1/12,1/12);
+  const parkRoof=tTex(256,256,(g,W,H)=>{ g.fillStyle='#8a8c8d'; g.fillRect(0,0,W,H); const C=['#c9ccd0','#2b2f36','#8b1d1d','#e6e6e6','#3b5c8f','#555']; let s=3;
+      for(let y=4;y<H;y+=36) for(let x=2;x<W;x+=12){ s=(s*16807)%2147483647; if(s%10<7){ g.fillStyle=C[s%C.length]; g.fillRect(x,y,8,14); } g.fillStyle='#f0f0f0'; g.fillRect(x-1,y,1,14); } },1/40,1/40);
+  const M2=(o)=>{ const m=new THREE.MeshLambertMaterial(o); NIGHT_MATS.push(m); return m; };
+  const white=M2({color:'#eef0f1'}), pierM=M2({map:pierGlass}), hallM=M2({map:hallGlass}), ribM=M2({map:ribRoof}), canM=M2({color:'#a9cbc0',side:THREE.DoubleSide,transparent:true,opacity:0.85}), parkM=M2({map:parkT}), parkTop=M2({map:parkRoof});
+  const ext=(pts,h0,h1,mats)=>{ const g=new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(p=>new THREE.Vector2(p[0],p[1]))),{depth:h1-h0,bevelEnabled:false}); g.rotateX(-Math.PI/2); g.translate(0,h0,0); const m=new THREE.Mesh(g,mats); scene.add(m); return m; };
+  const N=T4P.length-1, iV=t4Idx(736), iH=t4Idx(684);
+  ext(t4Band(0,N,0,18),0,13,[white,pierM]); ext(t4Band(0,N,-1.2,19),13,14.4,white);                       // glass pier along the gates + white roof edge
+  ext(T4.east,0,13,[white,pierM]); ext(T4.east,13,14.4,white);                                               // straight east end of the pier
+  ext(t4Band(0,iH,18,44),0,10,[ribM,hallM]);                                                                 // low south-west wing
+  ext(t4Band(iH,iV,18,118),0,15,[ribM,hallM]); ext(t4Band(iV,N,50,122),0,24,[ribM,hallM]);                 // main hall
+  ext(t4Band(iH,N,118,132),8,9,canM);                                                                        // landside glass canopy over the kerb
+  ext(t4Band(iV,N,17,51),0,13,[white,hallM]);                                                               // block under the wave roof (vault ends are closed)
+  { // wave roof: barrel vaults across the band, 9 m apart, greenish glass with white ribs in the valleys
+    const pos=[], col=[], idx=[], cg=new THREE.Color('#7fa79b'), cw=new THREE.Color('#f2f4f4'), d0=18, d1=50;
+    for(let i=iV;i<=N;i++){ const ph=Math.abs(Math.sin(Math.PI*(i-iV)/9)), y=13+4.5*ph, c=cw.clone().lerp(cg,Math.min(1,ph*3));
+      for(const d of [d0,(d0+d1)/2,d1]){ const q=t4At(i,d); pos.push(q[0],y+(d===d0||d===d1?0:0.8*ph),-q[1]); col.push(c.r,c.g,c.b); } }
+    for(let i=0;i<N-iV;i++) for(let j=0;j<2;j++){ const a=i*3+j, b=a+3; idx.push(a,b,a+1, a+1,b,b+1); }
+    const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('color',new THREE.Float32BufferAttribute(col,3)); g.setIndex(idx); g.computeVertexNormals();
+    const m=M2({vertexColors:true,side:THREE.DoubleSide}); scene.add(new THREE.Mesh(g,m)); }
+  { // "ESENBOĞA AIRPORT" on the main hall's apron face, above the wave roof
+    const c=document.createElement('canvas'); c.width=2048; c.height=128; const x=c.getContext('2d'); x.fillStyle='#e9ecee'; x.fillRect(0,0,2048,128);
+    x.fillStyle='#2b3a45'; x.font='bold 96px system-ui,Arial'; x.textAlign='center'; x.textBaseline='middle'; x.fillText('ESENBOĞA AIRPORT',1024,68);
+    const t=new THREE.CanvasTexture(c); t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+    const im=Math.round((iV+N)/2), q=T4P[im], at=t4At(im,49.6), geo=new THREE.PlaneGeometry(64,4); const m=new THREE.Mesh(geo,M2({map:t}));
+    m.position.set(at[0],20.5,-at[1]); m.rotation.y=Math.atan2(-q.n[0],q.n[1]); scene.add(m); }
+  ext(T4.park,0,13,[parkTop,parkM]);                                                                         // multi-storey car park
+  // AIP buildings that the traced terminal and car park replace
+  const inside=(p,poly)=>{ let c=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){ const a=poly[i],b=poly[j]; if(((a[1]>p[1])!==(b[1]>p[1]))&&(p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])) c=!c; } return c; };
+  const covered=[t4Band(0,N,-2,135),T4.park,T4.east];
   for(const b of DATA.buildings){
+    const cx=b.pts.reduce((a,p)=>a+p[0],0)/b.pts.length, cy=b.pts.reduce((a,p)=>a+p[1],0)/b.pts.length;
+    if(b.id==='B40'||b.id==='B47'||covered.some(P=>inside([cx,cy],P))) continue;
     const sh=new THREE.Shape(b.pts.map(p=>new THREE.Vector2(p[0],p[1])));
     const g=new THREE.ExtrudeGeometry(sh,{depth:b.h,bevelEnabled:false});
     g.rotateX(-Math.PI/2);
-    if(!TERM[b.id]){ scene.add(new THREE.Mesh(g,[roof,wall])); continue; }
-    scene.add(new THREE.Mesh(g,[roofM,glassM]));
-    // canopy: thin white slab a little larger than the footprint, sitting on the roof edge
-    const cx=b.pts.reduce((a,p)=>a+p[0],0)/b.pts.length, cy=b.pts.reduce((a,p)=>a+p[1],0)/b.pts.length;
-    const big=b.pts.map(p=>{ const dx=p[0]-cx, dy=p[1]-cy, L=Math.hypot(dx,dy)||1; return new THREE.Vector2(p[0]+dx/L*6,p[1]+dy/L*6); });
-    const cg=new THREE.ExtrudeGeometry(new THREE.Shape(big),{depth:1.2,bevelEnabled:false}); cg.rotateX(-Math.PI/2); cg.translate(0,b.h,0);
-    scene.add(new THREE.Mesh(cg,canopyM));
+    scene.add(new THREE.Mesh(g,[roof,wall]));
   }
 }
 
@@ -431,24 +480,27 @@ if(DATA.buildings && DATA.buildings.length){
 // telescopic tunnel reaches the aircraft's forward left door only when an aircraft is parked; otherwise it stays
 // retracted beside the rotunda, clear of the stand and the taxilanes.
 const PBBS=[];
-{ const mat=new THREE.MeshLambertMaterial({color:'#c9ced4'}), dark=new THREE.MeshLambertMaterial({color:'#5b636b'}), glass=new THREE.MeshLambertMaterial({color:'#2d3e4f'});
-  const term=DATA.buildings||[];
+{ const mat=new THREE.MeshLambertMaterial({color:'#dfe3e6'}), dark=new THREE.MeshLambertMaterial({color:'#5b636b'}), glass=new THREE.MeshLambertMaterial({color:'#2d3e4f'});
+  const lg=new THREE.MeshLambertMaterial({color:'#9cc9bc',transparent:true,opacity:0.8}), wf=new THREE.MeshLambertMaterial({color:'#f1f3f4'});
+  // facade line of the traced terminal (pier + its straight east end)
+  const fac=T4P.map(q=>q.p).concat([T4.east[0],T4.east[1]]); const facSegs=[]; for(let i=0;i<T4P.length-1;i++) facSegs.push([T4P[i].p,T4P[i+1].p]); facSegs.push([T4.east[0],T4.east[1]]);
   const ray=(o,h)=>{ const dx=Math.sin(h*Math.PI/180), dy=Math.cos(h*Math.PI/180); let best=null;
-    for(const b of term){ const p=b.pts; for(let i=0;i<p.length;i++){ const a=p[i], c=p[(i+1)%p.length], ex=c[0]-a[0], ey=c[1]-a[1], den=dx*ey-dy*ex; if(Math.abs(den)<1e-9) continue;
-      const t=((a[0]-o[0])*ey-(a[1]-o[1])*ex)/den, u=((a[0]-o[0])*dy-(a[1]-o[1])*dx)/den; if(t>20&&t<160&&u>=0&&u<=1&&(best==null||t<best)) best=t; } } return best; };
+    for(const [a,c] of facSegs){ const ex=c[0]-a[0], ey=c[1]-a[1], den=dx*ey-dy*ex; if(Math.abs(den)<1e-9) continue;
+      const t=((a[0]-o[0])*ey-(a[1]-o[1])*ex)/den, u=((a[0]-o[0])*dy-(a[1]-o[1])*dx)/den; if(t>20&&t<200&&u>=0&&u<=1&&(best==null||t<best)) best=t; } return best; };
+  const bar=(A,B,w,h,y,m)=>{ const dx=B[0]-A[0], dy=B[1]-A[1], L=Math.hypot(dx,dy); const k=new THREE.Mesh(new THREE.BoxGeometry(w,h,L),m); k.position.set((A[0]+B[0])/2,y,-(A[1]+B[1])/2); k.rotation.y=Math.atan2(dx,-dy); return k; };
   const st=DATA.stands.filter(x=>+x.id>=103&&+x.id<=120);
-  const hits=st.map(x=>ray(x.xy,x.hdg)), known=hits.filter(v=>v!=null&&v<130), avg=known.length?known.reduce((a,b)=>a+b,0)/known.length:100;
-  st.forEach((x,i)=>{ const t=(hits[i]!=null&&hits[i]<130)?hits[i]:avg, h=x.hdg*Math.PI/180, f=[Math.sin(h),Math.cos(h)], l=[-Math.cos(h),Math.sin(h)];   // f toward the terminal, l = aircraft's left
-    const P=(a,b)=>[x.xy[0]+f[0]*a+l[0]*b,x.xy[1]+f[1]*a+l[1]*b], F=P(Math.max(t,22),12), R=P(Math.min(Math.max(t,22)-6,14),12), deck=4.6;   // stand point = nose-wheel stop mark; rotunda just ahead-left of the nose so the bridge meets the forward left door
+  st.forEach(x=>{ const h=x.hdg*Math.PI/180, f=[Math.sin(h),Math.cos(h)], l=[-Math.cos(h),Math.sin(h)];   // f toward the terminal, l = aircraft's left
+    const P=(a,b)=>[x.xy[0]+f[0]*a+l[0]*b,x.xy[1]+f[1]*a+l[1]*b], o=P(0,12), t=ray(o,x.hdg)||80;
+    // real Esenboğa layout: a glass fixed link straight out from the pier, a square rotunda, then the telescopic tunnel to the door
+    const F=P(t+0.5,12), R=P(Math.max(16,t-42),12), deck=5;
     const g=new THREE.Group(); scene.add(g);
-    const link=new THREE.Mesh(new THREE.BoxGeometry(3.2,3,1),mat); g.add(link);
-    { const dx=R[0]-F[0], dy=R[1]-F[1], L=Math.hypot(dx,dy); link.scale.z=L; link.position.set((F[0]+R[0])/2,deck+1.5,-(F[1]+R[1])/2); link.rotation.y=Math.atan2(dx,-dy); }
-    for(const q of [F,[(F[0]+R[0])/2,(F[1]+R[1])/2]]){ const c=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,deck,8),dark); c.position.set(q[0],deck/2,-q[1]); g.add(c); }
-    const rot=new THREE.Mesh(new THREE.CylinderGeometry(2.4,2.4,3.4,16),mat); rot.position.set(R[0],deck+1.6,-R[1]); g.add(rot);
-    const rc=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,deck,8),dark); rc.position.set(R[0],deck/2,-R[1]); g.add(rc);
+    g.add(bar(F,R,3.0,3.0,deck+1.5,lg), bar(F,R,3.3,0.35,deck+3.15,wf), bar(F,R,3.3,0.45,deck-0.1,wf));
+    for(const k of [0.33,0.66]){ const q=[F[0]+(R[0]-F[0])*k,F[1]+(R[1]-F[1])*k]; const c=new THREE.Mesh(new THREE.BoxGeometry(0.6,deck,0.6),wf); c.position.set(q[0],deck/2,-q[1]); g.add(c); }
+    const rot=new THREE.Mesh(new THREE.BoxGeometry(5.2,4.2,5.2),wf); rot.position.set(R[0],deck+1.8,-R[1]); rot.rotation.y=-h; g.add(rot);
+    const rc=new THREE.Mesh(new THREE.BoxGeometry(1.4,deck,1.4),mat); rc.position.set(R[0],deck/2,-R[1]); g.add(rc);
     const tun=new THREE.Mesh(new THREE.BoxGeometry(2.9,2.8,1),mat), cab=new THREE.Mesh(new THREE.BoxGeometry(4,3.1,3.2),glass), leg=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,1,8),dark);
     const wheels=new THREE.Mesh(new THREE.BoxGeometry(3,0.9,1.2),dark); g.add(tun,cab,leg,wheels);
-    const park=P(0,15);   // retracted cab position, ahead of the nose and outside the stand
+    const park=P(Math.max(4,Math.min(t-42,20)-14),15);   // retracted cab position: tunnel folded back toward the rotunda, outside the stand
     PBBS.push({id:x.id,xy:x.xy,hdg:x.hdg,R,park,deck,cur:{p:park.slice(),h:deck},tun,cab,leg,wheels,f,l}); });
 }
 function pbbFrame(dt){ const k=1-Math.exp(-dt*0.6);
