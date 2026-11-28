@@ -682,7 +682,7 @@ function rwyGates(P){ const gates=[], end=P.cum.at(-1);
         gates.push({s:gs,rwy:id,hp}); }
       prev=inn; if(sp>=end) break; } }
   return gates.sort((x,y)=>x.s-y.s); }
-const TAXIMAX=a=>a.kind==='veh'?200:30, taxiDef=a=>a.kind==='veh'?20:15;
+const TAXIMAX=a=>a.kind==='veh'?200:60, taxiDef=a=>a.kind==='veh'?20:15;
 function startPath(a,pts,o){
   if(pts.length<2) return;
   if(o.mode==='taxi'&&a.taxiSpd&&o.spd>=10) o={...o,spd:a.taxiSpd};

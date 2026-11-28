@@ -196,8 +196,11 @@ const MODELS = (()=>{
     lights.strobeL=lights.navL.slice(); lights.strobeR=lights.navR.slice(); lights.landing=[0,G.wr*2+legH*0.6,z0+G.nose-0.2]; lights.taxi=lights.landing.slice();
     g.userData={gear:gr,gearFixed:!!G.fixed,props,lights,spec:s,flashers:[]};
     // real-type 3D model (glTF) when one is loaded: hide the hand-built airframe, keep the retractable gear and light anchors
-    if(GLB[type]){ for(const c of g.children) if(c!==gr) c.visible=false;
-      const m=GLB[type].clone(); m.position.set(0,fusY-R,z0); g.add(m); g.userData.glb=true; }
+    if(GLB[type]){ const T=GLB[type], own=T.userData.hasGear;
+      for(const c of g.children) if(own||c!==gr) c.visible=false;
+      const m=T.clone(); m.position.set(0,own?0:fusY-R,z0); g.add(m); g.userData.glb=true;
+      if(own){ g.userData.gear=m.getObjectByName('gear'); g.userData.glbGear=true; }
+      g.userData.wheels=(T.userData.wheels||[]).map(w=>({n:m.getObjectByName(w.name),r:w.r})).filter(w=>w.n); }
     return g;
   }
   // ---------- glTF models of the real types ----------
@@ -205,20 +208,24 @@ const MODELS = (()=>{
   const GLB={};
   function useGLB(type,root,noseAxis,recolor){
     const s=S[type]; if(!s) return;
-    const piv=new THREE.Group(); piv.add(root); piv.rotation.y=noseAxis==='+x'?Math.PI/2:0; piv.updateMatrixWorld(true);
+    const piv=new THREE.Group(); piv.add(root); piv.rotation.y=noseAxis==='+x'?Math.PI/2:noseAxis==='-x'?-Math.PI/2:0; piv.updateMatrixWorld(true);
     const box=new THREE.Box3().setFromObject(piv), len=box.max.z-box.min.z, cx=(box.min.x+box.max.x)/2, v=new THREE.Vector3();
     let belly=Infinity; const z1=box.min.z+len*0.3, z2=box.min.z+len*0.6;
     root.traverse(o=>{ if(!o.isMesh) return; const P=o.geometry.attributes.position;
       for(let i=0;i<P.count;i++){ v.fromBufferAttribute(P,i).applyMatrix4(o.matrixWorld); if(Math.abs(v.x-cx)<0.6&&v.z>z1&&v.z<z2&&v.y<belly) belly=v.y; } });
     if(!isFinite(belly)) belly=box.min.y;
+    const gearN=root.getObjectByName('gear'), hasGear=!!gearN; if(hasGear) belly=box.min.y;   // model brings its own landing gear: wheels on the ground
+    // wheels (nodes 'wheel_N', geometry centred on the axle): kept under the gear so they retract with it, spun while rolling
+    const wheels=[]; const wl=[]; root.traverse(o=>{ if(/^wheel_\d+$/.test(o.name)) wl.push(o); });
+    for(const w of wl){ const b=new THREE.Box3().setFromObject(w); wheels.push({name:w.name,r:Math.max(0.2,(b.max.y-b.min.y)/2)}); if(gearN) gearN.attach(w); }
     const k=s.L/len; piv.scale.setScalar(k); piv.position.set(-cx*k,-belly*k,-box.min.z*k);
     root.traverse(o=>{ if(!o.isMesh) return; const old=Array.isArray(o.material)?o.material[0]:o.material;
       if(old.map&&recolor&&old.map.image&&!old.map.__rc){ old.map.__rc=1;   // pixel recolour of the model's own paint (e.g. green -> Boeing blue)
         const im=old.map.image, c=document.createElement('canvas'); c.width=im.width; c.height=im.height; const x=c.getContext('2d'); x.drawImage(im,0,0);
         const d=x.getImageData(0,0,c.width,c.height), a=d.data; for(let i=0;i<a.length;i+=4) recolor(a,i); x.putImageData(d,0,0); old.map.image=c; old.map.needsUpdate=true; }
       if(old.map) old.map.encoding=THREE.LinearEncoding;   // same colour handling as the canvas-painted textures
-      o.material=new THREE.MeshLambertMaterial({map:old.map||null,color:old.map?'#ffffff':old.color,side:THREE.DoubleSide}); });
-    const t=new THREE.Group(); t.add(piv); GLB[type]=t; }
+      o.material=new THREE.MeshLambertMaterial({map:old.map||null,color:old.map?'#ffffff':old.color,side:THREE.DoubleSide,alphaTest:old.alphaTest||0,transparent:!!old.transparent,opacity:old.opacity}); });
+    const t=new THREE.Group(); t.add(piv); t.userData.hasGear=hasGear; t.userData.wheels=wheels.map(w=>({name:w.name,r:w.r*k})); GLB[type]=t; }
 
   // ---------- vehicles ----------
   // beacon glow: additive sprite with a fixed on-screen size, so the flash reads from the tower at any zoom
