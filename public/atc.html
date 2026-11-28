@@ -4168,17 +4168,51 @@ const MODELS = (()=>{
   };
   // towbarless pushback tug (TLD/Goldhofer style): low yellow chassis, side cab, nose-wheel cradle at the front.
   // Origin = cradle centre (where the aircraft nose wheel sits); the tug body extends toward +z behind it.
-  function tug(){ const g=new THREE.Group(), fl=[], y=M('#f2b705'), blk=M(DARK);
-    const ch=box(3.6,1.0,7.2,y); ch.position.set(0,0.95,3.9); g.add(ch);
-    for(const sd of [-1,1]){ const arm=box(0.55,0.7,2.6,y); arm.position.set(sd*1.35,0.75,-0.1); g.add(arm); }
-    const cr=box(2.1,0.25,1.6,blk); cr.position.set(0,0.35,0); g.add(cr);                      // cradle plate under the nose wheel
-    const bump=box(3.7,0.35,0.3,blk); bump.position.set(0,0.75,7.55); g.add(bump);
-    const cab=box(1.5,1.3,2.0,y); cab.position.set(1.0,2.1,4.6); g.add(cab);
-    const gl=box(1.52,0.75,2.02,M(GLASS)); gl.position.set(1.0,2.35,4.6); g.add(gl);
-    const roof=box(1.6,0.12,2.1,y); roof.position.set(1.0,2.8,4.6); g.add(roof);
-    const st=box(3.62,0.16,7.2,blk); st.position.set(0,1.25,3.9); g.add(st);                    // black band
-    const W=[]; for(const z of [2.0,6.2]) for(const sd of [-1,1]){ const wh=wheel(0.62,0.55); wh.position.set(sd*1.55,0.62,z); g.add(wh); W.push({n:wh,r:0.62}); }
-    lightBar(g,1.62,6.6,0.5,['#ff9a00'],fl,1.6);
+  // towbarless pushback tug (Goldhofer AST / TLD TPX class, as used on the LTAC apron): low yellow body, U-shaped frame open at
+  // the rear where the nose wheel is clamped and lifted, low side cab, four big wheels. Origin = centre of the cradle (nose wheel).
+  function tug(){ const g=new THREE.Group(), fl=[], y=M('#f2b705'), yd=M('#d79f00'), blk=M(DARK), grey=M('#4a4f55'), steel=M('#9aa1a8');
+    const chev=canvasTex('tug_chev',256,64,(c,W,H)=>{ c.fillStyle='#f2b705'; c.fillRect(0,0,W,H); c.fillStyle='#16181b';
+      for(let x=-H;x<W+H;x+=48){ c.beginPath(); c.moveTo(x,H); c.lineTo(x+24,H); c.lineTo(x+24+H,0); c.lineTo(x+H,0); c.fill(); } });
+    const CH=chev?new THREE.MeshLambertMaterial({map:chev}):y;
+    const logo=canvasTex('tug_side',512,128,(c,W,H)=>{ c.fillStyle='#f2b705'; c.fillRect(0,0,W,H); c.fillStyle='#16181b'; c.fillRect(0,H*0.78,W,H*0.12);
+      c.font='bold 46px Arial'; c.textBaseline='middle'; c.fillText('PUSHBACK',24,H*0.4); c.fillStyle='#c8102e'; c.fillRect(W-150,H*0.18,110,H*0.42); c.fillStyle='#fff'; c.font='bold 34px Arial'; c.fillText('TGS',W-128,H*0.4); });
+    const SD=logo?new THREE.MeshLambertMaterial({map:logo}):y;
+    // side beams of the U-frame around the cradle (open towards -z, the aircraft side)
+    for(const sd of [-1,1]){ const b=new THREE.Mesh(new THREE.BoxGeometry(0.75,0.95,3.4),[y,y,y,blk,y,CH]); b.position.set(sd*1.42,0.78,-0.1); g.add(b);
+      const fe=box(0.8,0.12,1.9,blk); fe.position.set(sd*1.42,1.32,-0.6); g.add(fe); }
+    // main body: lower hull, upper deck with sloped front, chevron bumper at the cradle end of the body
+    const hull=new THREE.Mesh(new THREE.BoxGeometry(3.6,0.95,5.9),[SD,SD,y,blk,y,y]); hull.position.set(0,0.82,4.55); g.add(hull);
+    const deck=box(3.5,0.35,4.2,yd); deck.position.set(-0.25,1.45,5.2); g.add(deck);
+    const nose=box(3.5,0.5,1.0,y); nose.position.set(0,1.05,7.35); nose.rotation.x=-0.45; g.add(nose);
+    const bump=box(3.7,0.4,0.35,blk); bump.position.set(0,0.62,7.75); g.add(bump);
+    const rb=new THREE.Mesh(new THREE.BoxGeometry(3.62,0.5,0.12),CH); rb.position.set(0,1.0,1.58); g.add(rb);
+    // engine grille and exhaust on the deck, handrail, steps
+    for(let k=0;k<6;k++){ const gr=box(1.6,0.05,0.12,blk); gr.position.set(-0.7,1.64,4.0+k*0.35); g.add(gr); }
+    const ex=cyl(0.07,0.07,0.9,8,grey); ex.rotation.x=0; ex.geometry.rotateX(Math.PI/2); ex.position.set(-1.55,2.0,6.6); g.add(ex);
+    const hr=box(0.05,0.05,1.8,steel); hr.position.set(1.75,2.05,3.9); g.add(hr);
+    for(const z of [3.1,4.7]){ const p=box(0.05,0.5,0.05,steel); p.position.set(1.75,1.8,z); g.add(p); }
+    const step=box(0.5,0.06,0.5,blk); step.position.set(1.95,0.55,4.0); g.add(step);
+    // low side cab (operator faces the aircraft when pushing)
+    const cab=new THREE.Group(); cab.position.set(1.05,1.62,5.6); g.add(cab);
+    const cb=box(1.4,0.55,1.9,y); cb.position.set(0,0.27,0); cab.add(cb);
+    const glass=box(1.36,0.85,1.8,M(GLASS)); glass.position.set(0,0.98,0); cab.add(glass);
+    for(const [px,pz] of [[-0.68,-0.92],[0.68,-0.92],[-0.68,0.92],[0.68,0.92]]){ const pl=box(0.07,0.88,0.07,blk); pl.position.set(px,0.98,pz); cab.add(pl); }
+    const roof=box(1.5,0.12,2.0,y); roof.position.set(0,1.47,0); cab.add(roof);
+    const seat=box(0.5,0.5,0.5,grey); seat.position.set(0,0.7,0.3); cab.add(seat);
+    const mir=box(0.05,0.25,0.35,blk); mir.position.set(0.85,1.15,-0.9); cab.add(mir);
+    // cradle: black base plate, wheel clamp paddles, lifting ramp and hydraulic rams
+    const cr=box(2.0,0.22,1.9,blk); cr.position.set(0,0.3,0); g.add(cr);
+    for(const sd of [-1,1]){ const cl=box(0.18,0.55,1.0,grey); cl.position.set(sd*0.78,0.65,0.15); g.add(cl);
+      const ram=cyl(0.09,0.09,1.4,8,steel); ram.position.set(sd*0.9,0.75,1.0); ram.rotation.x=0.35; g.add(ram); }
+    const ramp=box(1.9,0.1,0.8,grey); ramp.position.set(0,0.22,-1.25); ramp.rotation.x=0.2; g.add(ramp);
+    const gate=box(1.7,0.4,0.15,grey); gate.position.set(0,0.62,1.02); g.add(gate);
+    // four big wheels with yellow hubs; the rear pair sits beside the cradle in the U-frame
+    const W=[]; for(const [z,r] of [[-0.9,0.6],[6.2,0.62]]) for(const sd of [-1,1]){ const wg=new THREE.Group(); wg.position.set(sd*1.55,r,z);
+      const t=wheel(r,0.55); wg.add(t); const hub=cyl(r*0.45,r*0.45,0.58,10,y); hub.geometry.rotateY(Math.PI/2); wg.add(hub); g.add(wg); W.push({n:wg,r}); }
+    // lights: amber beacon on the cab roof, headlights, red tail lights
+    lightBar(g,3.2,5.6,0.35,['#ff9a00'],fl,1.6); fl.forEach(f=>{ f.m.position.x=1.05; if(f.sp) f.sp.position.x=1.05; });
+    for(const sd of [-1,1]){ const hl=box(0.35,0.18,0.06,M('#fff6d0',true)); hl.position.set(sd*1.3,0.98,7.82); g.add(hl);
+      const tl=box(0.3,0.15,0.06,M('#d01020',true)); tl.position.set(sd*1.42,1.1,-1.82); g.add(tl); }
     g.userData={flashers:fl,lights:{},tugWheels:W}; return g; }
   const VTYPE={'Fire truck':'fire','Police':'police','Ambulance':'ambulance','Follow-me':'follow','Passenger bus':'bus','Catering truck':'catering'};
   // real vehicle models (glTF): the file's front axis is turned to -z, the model is scaled to the vehicle's real length,
