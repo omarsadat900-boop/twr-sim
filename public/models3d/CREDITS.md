@@ -18,3 +18,10 @@ iniş takımı ve boya olduğu gibi kullanıldı. Dönüştürme araçları: `ka
 
 `A350.glb`: amvlab 3d Aircraft Models (https://github.com/amvlab/aircraft-models), CC BY 4.0, logosuz sürüm
 (lisans metni `LICENSE-CC-BY-4.0.txt`). Dosya değiştirilmedi; tarayıcıda ölçeklenip döndürülüyor.
+
+
+## Vehicles
+| File | Source | Licence |
+|---|---|---|
+| followme.glb | FlightGear 767-300 aircraft, Models/Operations/Followme | GPL v2+ |
+| bus.glb | FlightGear 767-300 aircraft, Models/Operations/Bus | GPL v2+ |
