@@ -361,8 +361,13 @@ const X0=-450, X1=2650, Y0=-700, Y1=3450, R=1;
   // landside: roads (asphalt, white edge lines) and the car park footprint
   const road=(pts,w)=>{ g.lineJoin='round'; g.lineCap='round'; g.beginPath(); pts.forEach((p,i)=>{ const [x,y]=P(p); i?g.lineTo(x,y):g.moveTo(x,y); });
     g.strokeStyle='#e8e8e4'; g.lineWidth=(w+1.2)/R; g.stroke(); g.strokeStyle='#5f6266'; g.lineWidth=w/R; g.stroke(); g.setLineDash([3/R,6/R]); g.strokeStyle='#d8d8d0'; g.lineWidth=0.3/R; g.stroke(); g.setLineDash([]); };
+  { // landside lawns between the kerb and the main road (green, as in the aerial photos), with darker tree clumps
+    const N=T4P.length-1, L=[]; for(let i=0;i<=N;i+=4) L.push(t4At(i,134)); const M=T4.roads.main.slice().reverse(); const pts=L.concat([[1300,140],[1310,40]],M,[[600,-230],[470,-130]]);
+    g.fillStyle='#7c8a50'; poly(pts); g.fill();
+    let sd=5; const rr=()=>{ sd=(sd*16807)%2147483647; return sd/2147483647; };
+    g.save(); poly(pts); g.clip(); for(let k=0;k<420;k++){ const x=480+rr()*820, y=-230+rr()*370, r=2+rr()*4; const [px,py]=P([x,y]); g.fillStyle=rr()<0.5?'rgba(62,82,40,0.75)':'rgba(96,112,62,0.6)'; g.beginPath(); g.arc(px,py,r/R,0,7); g.fill(); } g.restore(); }
   road(T4.roads.main,22); road(T4.roads.front,16); road(T4.roads.loopR,10); road(T4.roads.loopW,10);
-  g.fillStyle='#7d7f80'; poly(T4.park); g.fill();
+  g.fillStyle='#6f7272'; poly(T4.park); g.fill();
   const tex=new THREE.CanvasTexture(c); tex.anisotropy=renderer.capabilities.getMaxAnisotropy(); tex.minFilter=THREE.LinearMipmapLinearFilter;
   const geo=new THREE.PlaneGeometry(X1-X0,Y1-Y0); geo.rotateX(-Math.PI/2);
   const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex})); m.position.set((X0+X1)/2,0,-(Y0+Y1)/2); scene.add(m); NIGHT_MATS.push(m.material);
@@ -480,23 +485,55 @@ if(DATA.buildings && DATA.buildings.length){
   ext(t4Band(iH,N,118,132),8,9,canM);                                                                        // landside glass canopy over the kerb
   ext(t4Band(iV,N,17,51),0,13,[white,hallM]);                                                               // block under the wave roof (vault ends are closed)
   { // wave roof: barrel vaults across the band, 9 m apart, greenish glass with white ribs in the valleys
-    const pos=[], col=[], idx=[], cg=new THREE.Color('#7fa79b'), cw=new THREE.Color('#f2f4f4'), d0=18, d1=50;
+    const pos=[], col=[], idx=[], cg=new THREE.Color('#c9d3d6'), cw=new THREE.Color('#f6f7f7'), d0=18, d1=50;   // white scalloped wave (photos), light grey in the valleys
     for(let i=iV;i<=N;i++){ const ph=Math.abs(Math.sin(Math.PI*(i-iV)/9)), y=13+4.5*ph, c=cw.clone().lerp(cg,Math.min(1,ph*3));
       for(const d of [d0,(d0+d1)/2,d1]){ const q=t4At(i,d); pos.push(q[0],y+(d===d0||d===d1?0:0.8*ph),-q[1]); col.push(c.r,c.g,c.b); } }
     for(let i=0;i<N-iV;i++) for(let j=0;j<2;j++){ const a=i*3+j, b=a+3; idx.push(a,b,a+1, a+1,b,b+1); }
     const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('color',new THREE.Float32BufferAttribute(col,3)); g.setIndex(idx); g.computeVertexNormals();
-    const m=M2({vertexColors:true,side:THREE.DoubleSide}); scene.add(new THREE.Mesh(g,m)); }
+    const m=M2({vertexColors:true,side:THREE.DoubleSide}); scene.add(new THREE.Mesh(g,m));
+    // green glass filling each arch at both ends of the wave band (the glazed gables under the white humps)
+    const gp=[], gi=[]; for(const d of [d0,d1]){ for(let i=iV;i<=N;i++){ const ph=Math.abs(Math.sin(Math.PI*(i-iV)/9)), q=t4At(i,d); const b=gp.length/3; gp.push(q[0],13,-q[1], q[0],13+4.5*ph-0.15,-q[1]); if(i>iV) gi.push(b-2,b,b-1, b-1,b,b+1); } }
+    const gg=new THREE.BufferGeometry(); gg.setAttribute('position',new THREE.Float32BufferAttribute(gp,3)); gg.setIndex(gi); gg.computeVertexNormals();
+    scene.add(new THREE.Mesh(gg,M2({color:'#5f8f86',side:THREE.DoubleSide}))); }
   { // "ESENBOĞA AIRPORT" twice on the main hall's apron face, above the wave roof (as in the photos)
     const c=document.createElement('canvas'); c.width=2048; c.height=128; const x=c.getContext('2d'); x.fillStyle='#e9ecee'; x.fillRect(0,0,2048,128);
-    x.fillStyle='#2b3a45'; x.font='bold 96px system-ui,Arial'; x.textAlign='center'; x.textBaseline='middle'; x.fillText('ESENBOĞA AIRPORT',1024,68);
+    x.fillStyle='#2b3a45'; x.font='600 92px system-ui,Arial'; x.textAlign='center'; x.textBaseline='middle'; x.fillText('ESENBOĞA HAVALİMANI',1024,68);
     const t=new THREE.CanvasTexture(c); t.anisotropy=renderer.capabilities.getMaxAnisotropy(); const sm=M2({map:t});
-    for(const fr of [0.3,0.78]){ const im=Math.round(iV+(N-iV)*fr), q=T4P[im], at=t4At(im,49.6); const m=new THREE.Mesh(new THREE.PlaneGeometry(56,3.6),sm);
+    for(const fr of [0.55]){ const im=Math.round(iV+(N-iV)*fr), q=T4P[im], at=t4At(im,49.6); const m=new THREE.Mesh(new THREE.PlaneGeometry(64,3.6),sm);
       m.position.set(at[0],20.5,-at[1]); m.rotation.y=Math.atan2(-q.n[0],q.n[1]); scene.add(m); } }
   { // roof skylights: rows of glass panels along the main hall and the south-west wing
-    const sg=M2({color:'#5d8a91'}), geo=new THREE.BoxGeometry(3.2,0.5,6); const rows=[[iV,N,[66,84,102],24.1],[iH,iV,[40,62,84,104],15.1]];
-    for(const [i0,i1,ds,hy] of rows) for(const d of ds) for(let i=i0+4;i<i1-4;i+=10){ const p0=t4At(i-3,d), p1=t4At(i+3,d), m=new THREE.Mesh(geo,sg);
-      m.position.set((p0[0]+p1[0])/2,hy,-(p0[1]+p1[1])/2); m.rotation.y=Math.atan2(p1[0]-p0[0],-(p1[1]-p0[1])); scene.add(m); } }
-  ext(T4.park,0,13,[parkTop,parkM]);                                                                         // multi-storey car park
+    // (photos: long green glass fingers running across the roof from the apron edge to the landside edge, ~12 m apart)
+    const sg=M2({color:'#5f9a90'}), rows=[[iV,N,54,118,24.05],[iH,iV,22,114,15.05]];
+    for(const [i0,i1,da,db,hy] of rows) for(let i=i0+5;i<i1-3;i+=12){ const a=t4At(i,da), b=t4At(i,db), L=Math.hypot(b[0]-a[0],b[1]-a[1]);
+      const m=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,L,10,1,false,0,Math.PI),sg); m.geometry.rotateZ(Math.PI/2); m.geometry.rotateY(Math.PI/2);
+      m.position.set((a[0]+b[0])/2,hy,-(a[1]+b[1])/2); m.rotation.y=Math.atan2(b[0]-a[0],-(b[1]-a[1])); m.scale.set(1,0.55,1); scene.add(m); } }
+  { // green glass dome at the middle of the landside front (departures entrance)
+    const im=Math.round((iV+N)/2), q=t4At(im,124), dm=new THREE.Mesh(new THREE.SphereGeometry(13,28,14,0,Math.PI*2,0,Math.PI/2),M2({color:'#6fa79c'}));
+    dm.scale.set(1,0.75,1); dm.position.set(q[0],0,-q[1]); scene.add(dm);
+    const rg=new THREE.Mesh(new THREE.TorusGeometry(13,0.35,6,40),white); rg.rotation.x=Math.PI/2; rg.position.set(q[0],0.3,-q[1]); scene.add(rg);
+    for(let k=0;k<8;k++){ const rib=new THREE.Mesh(new THREE.TorusGeometry(13,0.18,4,24,Math.PI/2),white); rib.scale.set(1,0.75,1); rib.rotation.y=k*Math.PI/4; rib.position.set(q[0],0,-q[1]); scene.add(rib); } }
+  { // elevated departures road along the main hall: deck on columns, parapets, ramps down at both ends
+    const R0=T4.roads.front, pts=[]; for(let i=1;i<R0.length;i++){ const a=R0[i-1], b=R0[i], L=Math.hypot(b[0]-a[0],b[1]-a[1]); for(let t=0;t<L;t+=3) pts.push([a[0]+(b[0]-a[0])*t/L,a[1]+(b[1]-a[1])*t/L]); } pts.push(R0.at(-1));
+    const near=pts.map(p=>{ let b=1e9; for(let i=0;i<T4P.length;i+=3){ const q=t4At(i,125); b=Math.min(b,Math.hypot(p[0]-q[0],p[1]-q[1])); } return b; });
+    const sIn=pts.map((p,i)=>near[i]<40); const H=pts.map((p,i)=>{ let d=1e9; for(let k=0;k<pts.length;k++) if(sIn[k]) d=Math.min(d,Math.abs(k-i)*3); return 7.5*Math.max(0,Math.min(1,1-(d-0)/110)); });
+    const deck=M2({color:'#b9bcbd'}), par=M2({color:'#eceeef'}), col=M2({color:'#c4c6c3'});
+    for(let i=1;i<pts.length;i++){ const a=pts[i-1], b=pts[i], h=(H[i-1]+H[i])/2; if(h<0.4) continue; const L=Math.hypot(b[0]-a[0],b[1]-a[1]), yaw=Math.atan2(b[0]-a[0],b[1]-a[1]);
+      const sl=Math.atan2(H[i]-H[i-1],L); const m=new THREE.Mesh(new THREE.BoxGeometry(16,0.9,L+0.2),deck); m.position.set((a[0]+b[0])/2,h,-(a[1]+b[1])/2); m.rotation.order='YXZ'; m.rotation.y=-yaw+Math.PI; m.rotation.x=-sl; scene.add(m);
+      for(const sd of [-1,1]){ const pp=new THREE.Mesh(new THREE.BoxGeometry(0.35,1.1,L+0.2),par); pp.position.set(0,0,0); m.add(pp); pp.position.set(sd*7.9,0.95,0); }
+      if(i%6===0&&h>3){ const c=new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.7,h,10),col); c.position.set((a[0]+b[0])/2,h/2,-(a[1]+b[1])/2); scene.add(c); } } }
+  { const [A,B,C,D]=T4.park, n=16, Nn=(u)=>[A[0]+(B[0]-A[0])*u,A[1]+(B[1]-A[1])*u];             // A-B: terminal side, D-C: far side
+    const ex=[C[0]-B[0],C[1]-B[1]], el=Math.hypot(...ex), out=[ex[0]/el,ex[1]/el];
+    const Sf=(u)=>{ const q=[D[0]+(C[0]-D[0])*u,D[1]+(C[1]-D[1])*u], b=16*Math.sin(Math.PI*u); return [q[0]+out[0]*b,q[1]+out[1]*b]; };
+    const E=(t,u)=>{ const a=Nn(u), b=Sf(u); return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]; };
+    const deckT=tTex(256,256,(g,W,H)=>{ g.fillStyle='#a9acab'; g.fillRect(0,0,W,H); const Cc=['#c9ccd0','#2b2f36','#8b1d1d','#e6e6e6','#3b5c8f','#555']; let s2=9;
+        g.fillStyle='#eeeeea'; for(let y=6;y<H;y+=44) for(let x=0;x<W;x+=12) g.fillRect(x,y,1,16);
+        for(let y=6;y<H;y+=44) for(let x=2;x<W;x+=12){ s2=(s2*16807)%2147483647; if(s2%10<4){ g.fillStyle=Cc[s2%Cc.length]; g.fillRect(x+1,y+1,8,14); } } },1/36,1/36);
+    const deckM=M2({map:deckT}), green=M2({color:'#5d7a3a'}), core=M2({color:'#6e9c93'});
+    const hs=[14,10,6];
+    for(let k=0;k<3;k++){ const t0=k/3, t1=(k+1)/3, poly=[]; for(let i=0;i<=n;i++) poly.push(E(t0,i/n)); for(let i=n;i>=0;i--) poly.push(E(t1,i/n));
+      ext(poly,0,hs[k],[deckM,parkM]);
+      const edge=[]; for(let i=0;i<=n;i++) edge.push(E(t1-0.012,i/n)); for(let i=n;i>=0;i--) edge.push(E(t1,i/n)); ext(edge,hs[k],hs[k]+0.9,green);   // planted edge
+      for(const u of [0.2,0.5,0.8]){ const q=E(t0+0.06,u), m=new THREE.Mesh(new THREE.BoxGeometry(6,4,6),core); m.position.set(q[0],hs[k]+2,-q[1]); scene.add(m); } } }
   // AIP buildings that the traced terminal and car park replace
   const inside=(p,poly)=>{ let c=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){ const a=poly[i],b=poly[j]; if(((a[1]>p[1])!==(b[1]>p[1]))&&(p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])) c=!c; } return c; };
   const covered=[t4Band(0,N,-2,135),T4.park,T4.east];
