@@ -4,7 +4,7 @@
 const http=require('http'), fs=require('fs'), path=require('path'), {WebSocketServer}=require('ws');
 const PORT=process.env.PORT||8080, ADMIN_KEY=process.env.ADMIN_KEY||'';
 const PUB=path.join(__dirname,'public');
-const TYPES={'.html':'text/html; charset=utf-8','.js':'application/javascript','.json':'application/json','.png':'image/png','.css':'text/css'};
+const TYPES={'.html':'text/html; charset=utf-8','.js':'application/javascript','.json':'application/json','.png':'image/png','.glb':'model/gltf-binary','.txt':'text/plain; charset=utf-8','.css':'text/css'};
 
 const server=http.createServer((req,res)=>{
   let u=decodeURIComponent((req.url||'/').split('?')[0]);

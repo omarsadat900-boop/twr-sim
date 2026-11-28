@@ -65,3 +65,9 @@ detay sayfaları ECC ile hizalandı). Sadece referans için; yollar eski ortama 
 - `public/pilot.template.html` → pilot.html (instructor ekranı). `public/wx.js` iki sayfada ortak hava modeli + AWOS görünümü. Derleme: `python3 tools/build_all.py <proje>` (data/geo_tr.json gerekir).
 - Hava durumunu sadece pilot değiştirir; ATC (AWOS artık sağda) salt okunur. Şimdilik aynı tarayıcıdaki sekmeler arasında BroadcastChannel ile senkron; ağ üzerinden senkron + ses sunucu adımında.
 - Uçak tipleri listesi geçici; kullanıcı gerçek listeyi gönderecek. SID/STAR için AIP verisi bekleniyor (uydurulmadı).
+
+## Güncelleme 2026-11-28 (3D)
+- Taksi yolu çizim genişliği 2.0× (TWYW, uçak ölçeğiyle aynı); HP çizgileri HPW=11.5*TWYW.
+- Gerçek tip modelleri: `public/models3d/*.glb` (amvlab, CC BY 4.0, CREDITS.md). Kule `GLB_FILES` ile yükler,
+  `MODELS.useGLB` boyu tip L'ye ölçekler, gövde altını iniş takımının üstüne oturtur; el yapımı gövde gizlenir,
+  iniş takımı ve ışık noktaları kalır. Dosya yüklenemezse eski model kullanılır. GLTFLoader (r128) derlemede `/*__GLTF__*/` yerine gömülür.

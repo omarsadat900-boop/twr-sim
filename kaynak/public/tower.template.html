@@ -153,6 +153,11 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
+if(window.THREE){
+/*__GLTF__*/
+}
+</script>
+<script>
 /*__MODELS__*/
 </script>
 <script>
@@ -568,6 +573,14 @@ function makeAircraft(small){
   return g; }
 function makeVehicle(){ const m=new THREE.Mesh(new THREE.BoxGeometry(2.4,2.4,6),vehMat); m.position.y=1.2; const g=new THREE.Group(); g.add(m); return g; }
 const objs=new Map(); window.__objs=objs;
+// real-type 3D models (glTF, amvlab, CC BY 4.0). Until a file arrives (or if it can't load) the hand-built model is used.
+const GLB_FILES={A320:'A320.glb',B738:'B737.glb',A359:'A350.glb'};
+// B737 model ships dark green; the B738 livery from Omar's photos is blue, so green-dominant pixels become blue
+const GLB_RECOLOR={B738:(a,i)=>{ const r=a[i],g=a[i+1],b=a[i+2]; if(g>r+6&&g>b+4){ const v=g; a[i]=Math.round(v*0.55); a[i+1]=Math.min(255,Math.round(v*1.4)); a[i+2]=Math.min(255,Math.round(v*2.5)); } }};
+if(THREE.GLTFLoader){ const ldr=new THREE.GLTFLoader();
+  for(const [type,f] of Object.entries(GLB_FILES)) ldr.load('models3d/'+f,gl=>{ MODELS.useGLB(type,gl.scene,'+x',GLB_RECOLOR[type]);
+    for(const o of objs.values()) if(o.type===type) o.type='';   // rebuild aircraft already on screen with the new model
+  },undefined,e=>console.warn('3D model yüklenemedi:',f,e&&e.message)); }
 const TRAFFIC_SCALE=2.0, VEH_SCALE=3.5, BUS_SCALE=3.0, VEHLEN={'Fire truck':12,'Police':4.6,'Ambulance':6.5,'Follow-me':5.2,'Passenger bus':13.8,'Catering truck':9};
 let lastTF=0;
 const INTERP_MS=250, CLK={off:0,s:[]};
@@ -583,7 +596,7 @@ function trafficFrame(now){
   const wall=performance.timeOrigin+now;   // wall-clock time of this frame
   for(const a of best.values()){
     seen.add(a.id); let o=objs.get(a.id);
-    if(!o||o.type!==a.type){ if(o) scene.remove(o.g); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),buf:[],type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
+    if(!o||o.type!==a.type){ if(o){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); } o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),buf:[],type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
     const ts=a.ts||null, key=ts||(a.pos[0]+','+a.pos[1]+','+a.hdg+','+a.alt);
     if(o.key!==key){ o.key=key; const sts=ts||wall; clkSample(wall-sts);
       const s={ts:sts,p:a.pos.slice(),alt:a.alt,h:a.hdg,v:a.v||[0,0],vz:a.vz||0}, L=o.buf[o.buf.length-1];
