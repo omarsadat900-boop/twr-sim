@@ -182,7 +182,7 @@ const pad3=WXM.pad3;
 let lastHistPush=0;
 function remoteCur(c){ WXL.cur=c; WXR_t=Date.now(); WXR=null; const n=Date.now(); if(n-lastHistPush>=1000){ lastHistPush=n; WXL.hist.push([n,c.dir,c.spd]); const cut=n-600000; while(WXL.hist.length&&WXL.hist[0][0]<cut) WXL.hist.shift(); } }
 function wxNow(){ return (WXR && Date.now()-WXR_t<4000) ? WXR : {inp:WXL.inp,cur:WXL.cur,hist:WXL.hist}; }
-function applyRemote(w){ if(!w||!w.inp) return; Object.assign(WXL.inp,w.inp); if(w.cur){ WXR={inp:w.inp,cur:w.cur,hist:w.hist||[]}; WXR_t=Date.now(); }
+function applyRemote(w){ if(!w||!w.inp) return; Object.assign(WXL.inp,w.inp); if(w.cur){ WXR={inp:w.inp,cur:w.cur,hist:w.hist||[]}; WXR_t=Date.now(); } if(Array.isArray(w.hist)) WXL.hist=w.hist.slice();   // the pilot's history wins (it restarts when a new wind is typed)
   document.getElementById('wxSrc').textContent='Hava durumu pilot (instructor) ekranından geliyor. Sadece pilot değiştirebilir.'; }
 try{ const bc=new BroadcastChannel('twrsim'); bc.onmessage=e=>{ if(e.data&&e.data.t==='state'){ applyRemote(e.data.wx); window.__sb=e.data.sb||[]; window.__traffic=window.__traffic||{}; window.__traffic.local=e.data.traffic||[]; } }; }catch(e){}
 try{ const w=JSON.parse(localStorage.getItem('twrsim.wx')||'null'); if(w&&w.inp) Object.assign(WXL.inp,w.inp); }catch(e){}
@@ -597,7 +597,7 @@ function trafficFrame(now){
   const wall=performance.timeOrigin+now;   // wall-clock time of this frame
   for(const a of best.values()){
     seen.add(a.id); let o=objs.get(a.id);
-    if(!o||o.type!==a.type){ if(o){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); } if(a.kind!=='veh') needGLB(a.type); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),buf:[],type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
+    if(!o||o.type!==a.type){ if(o){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); if(o.tug) scene.remove(o.tug.g); } if(a.kind!=='veh') needGLB(a.type); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),buf:[],type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
     const ts=a.ts||null, key=ts||(a.pos[0]+','+a.pos[1]+','+a.hdg+','+a.alt);
     if(o.key!==key){ o.key=key; const sts=ts||wall; clkSample(wall-sts);
       const s={ts:sts,p:a.pos.slice(),alt:a.alt,h:a.hdg,v:a.v||[0,0],vz:a.vz||0}, L=o.buf[o.buf.length-1];
@@ -626,9 +626,29 @@ function trafficFrame(now){
         if(dd<50&&h<1){ const fwd=Math.sin(o.rh*Math.PI/180)*(ax-lp[0])+Math.cos(o.rh*Math.PI/180)*(ay-lp[1])>=0?1:-1; for(const w of W) w.n.rotation.z+=fwd*dd/(w.r*TRAFFIC_SCALE); } } } o.g.rotation.y=-o.rh*Math.PI/180; o.g.rotation.x=a.kind==='ac'?pr:0;
     // traffic is drawn a fixed 20% larger; zooming in or out does not change its size
     const gs=a.kind==='veh'?(a.type==='Passenger bus'?BUS_SCALE:VEH_SCALE):TRAFFIC_SCALE; o.g.scale.setScalar(gs);
+    if(a.kind==='ac') tugFrame(o,a,SP,now,dt);
     if(a.kind==='veh') for(const f of (o.g.userData.flashers||[])) if(f.sp){ const k=0.04/gs/Math.sqrt(st.zoom); f.sp.scale.set(k,k,1); }
   }
-  objs.forEach((o,id)=>{ if(!seen.has(id)){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); objs.delete(id); } });
+  objs.forEach((o,id)=>{ if(!seen.has(id)){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); if(o.tug) scene.remove(o.tug.g); objs.delete(id); } });
+}
+// pushback tug: the pilot screen sends a.tug = 'connect' | 'push' | 'leave'. The tug drives in from ahead and cradles the nose
+// wheel, stays on it during the push, then turns away and drives off. Drawn at the same scale as the aircraft.
+const TUG_IN=7, TUG_OUT=10;
+function tugFrame(o,a,SP,now,dt){
+  const ph=a.tug||null;
+  if(!ph){ if(o.tug){ scene.remove(o.tug.g); o.tug=null; } return; }
+  if(!o.tug){ const g=MODELS.tug(); g.scale.setScalar(TRAFFIC_SCALE); scene.add(g); o.tug={g,ph:null,t:0}; }
+  const T=o.tug; if(T.ph!==ph){ if(ph==='leave'){ T.h0=o.rh; T.nw=null; } T.ph=ph; T.t=0; } T.t+=dt;
+  const hr=o.rh*Math.PI/180, u=[Math.sin(hr),Math.cos(hr)], nl=SP&&SP.gear?SP.L/2-SP.gear.nose:10;
+  let nw=[o.r[0]+u[0]*nl,o.r[1]+u[1]*nl];               // true nose-wheel position (the aircraft is anchored on it)
+  let off=0, yaw=o.rh+180;                                // tug faces the aircraft, cradle on the nose wheel
+  if(ph==='connect'){ const f=Math.min(1,T.t/TUG_IN); off=60*(1-f)*(1-f); }
+  else if(ph==='leave'){ if(!T.nw) T.nw=nw; nw=T.nw; const h0=T.h0*Math.PI/180; u[0]=Math.sin(h0); u[1]=Math.cos(h0);
+    const f=Math.min(1,T.t/TUG_OUT); off=3+80*f*f; yaw=T.h0+180-180*Math.min(1,T.t/4); }
+  const x=nw[0]+u[0]*off, y=nw[1]+u[1]*off, g=T.g;
+  if(T.lp){ const dd=Math.hypot(x-T.lp[0],y-T.lp[1]); if(dd<60) for(const w of g.userData.tugWheels) w.n.rotation.x+=dd/(w.r*TRAFFIC_SCALE); } T.lp=[x,y];
+  g.position.set(x,0,-y); g.rotation.y=-yaw*Math.PI/180; MODELS.animate(g,now/1000);
+  for(const f of g.userData.flashers) if(f.sp){ const k=0.04/TRAFFIC_SCALE/Math.sqrt(st.zoom); f.sp.scale.set(k,k,1); }
 }
 
 // ---------- weather effects seen from the tower (rain, snow, storm, visibility) ----------

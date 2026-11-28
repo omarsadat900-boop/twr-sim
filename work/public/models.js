@@ -292,6 +292,20 @@ const MODELS = (()=>{
       const fl=[]; lightBar(g,2.95,-3.6,0.5,['#ff9a00'],fl,1.5);
       g.userData={flashers:fl,lights:{}}; return g; },
   };
+  // towbarless pushback tug (TLD/Goldhofer style): low yellow chassis, side cab, nose-wheel cradle at the front.
+  // Origin = cradle centre (where the aircraft nose wheel sits); the tug body extends toward +z behind it.
+  function tug(){ const g=new THREE.Group(), fl=[], y=M('#f2b705'), blk=M(DARK);
+    const ch=box(3.6,1.0,7.2,y); ch.position.set(0,0.95,3.9); g.add(ch);
+    for(const sd of [-1,1]){ const arm=box(0.55,0.7,2.6,y); arm.position.set(sd*1.35,0.75,-0.1); g.add(arm); }
+    const cr=box(2.1,0.25,1.6,blk); cr.position.set(0,0.35,0); g.add(cr);                      // cradle plate under the nose wheel
+    const bump=box(3.7,0.35,0.3,blk); bump.position.set(0,0.75,7.55); g.add(bump);
+    const cab=box(1.5,1.3,2.0,y); cab.position.set(1.0,2.1,4.6); g.add(cab);
+    const gl=box(1.52,0.75,2.02,M(GLASS)); gl.position.set(1.0,2.35,4.6); g.add(gl);
+    const roof=box(1.6,0.12,2.1,y); roof.position.set(1.0,2.8,4.6); g.add(roof);
+    const st=box(3.62,0.16,7.2,blk); st.position.set(0,1.25,3.9); g.add(st);                    // black band
+    const W=[]; for(const z of [2.0,6.2]) for(const sd of [-1,1]){ const wh=wheel(0.62,0.55); wh.position.set(sd*1.55,0.62,z); g.add(wh); W.push({n:wh,r:0.62}); }
+    lightBar(g,1.62,6.6,0.5,['#ff9a00'],fl,1.6);
+    g.userData={flashers:fl,lights:{},tugWheels:W}; return g; }
   const VTYPE={'Fire truck':'fire','Police':'police','Ambulance':'ambulance','Follow-me':'follow','Passenger bus':'bus','Catering truck':'catering'};
   function vehicle(type){ const f=V[VTYPE[type]]||V.follow; return f(); }
   // flasher animation: call every frame with time in seconds
@@ -300,7 +314,7 @@ const MODELS = (()=>{
     (u.flashers||[]).forEach(f=>{ const on=((t*f.rate+f.ph)%1)<0.45; f.m.material=on?f.on:f.off; if(f.sp) f.sp.visible=on; });
     if(u.props&&u.props.length){ const sp=state&&state.eng?(state.ias>5?40:25):0; u.props.forEach(p=>p.rotation.z+=sp*0.016); }
   }
-  return { aircraft, vehicle, animate, useGLB, hasGLB:t=>!!GLB[t], SPEC:S, VTYPE };
+  return { aircraft, vehicle, tug, animate, useGLB, hasGLB:t=>!!GLB[t], SPEC:S, VTYPE };
 })();
 // ---------- fire effect for a crash (GND-05) ----------
 MODELS.fire=function(size){ const g=new THREE.Group(), k=size||1, parts=[];
