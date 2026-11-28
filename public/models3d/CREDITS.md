@@ -25,3 +25,6 @@ iniş takımı ve boya olduğu gibi kullanıldı. Dönüştürme araçları: `ka
 |---|---|---|
 | followme.glb | FlightGear 767-300 aircraft, Models/Operations/Followme | GPL v2+ |
 | bus.glb | FlightGear 767-300 aircraft, Models/Operations/Bus | GPL v2+ |
+
+## Arazi
+`data/terrain.json`: AWS Terrain Tiles (terrarium, zoom 11; SRTM/GMTED tabanlı, kamu verisi), `tools/terrain.py` ile üretildi.

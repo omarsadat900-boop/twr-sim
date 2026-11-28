@@ -6,9 +6,11 @@ wx=open(w+'/public/wx.js').read()
 net=open(w+'/public/net.js').read()
 models=open(w+'/public/models.js').read()
 gltf=open(w+'/public/GLTFLoader.js').read()
+import os
+terr=open(w+'/data/terrain.json').read() if os.path.exists(w+'/data/terrain.json') else 'null'
 D=json.dumps(d,separators=(',',':')); G=json.dumps(geo,separators=(',',':'),ensure_ascii=False)
 for name in ['pilot','tower']:
     t=open(f'{w}/public/{name}.template.html').read()
-    t=t.replace('/*__GLTF__*/',gltf).replace('/*__MODELS__*/',models).replace('/*__WX__*/',wx).replace('/*__NET__*/',net).replace('__GEO__',G).replace('__DATA__',D)
+    t=t.replace('/*__GLTF__*/',gltf).replace('/*__MODELS__*/',models).replace('/*__WX__*/',wx).replace('/*__NET__*/',net).replace('__GEO__',G).replace('__DATA__',D).replace('__TERRAIN__',terr)
     open(f'{w}/public/{name}.html','w').write(t)
 t=open(w+'/public/chart.template.html').read(); open(w+'/public/chart.html','w').write(t.replace('__DATA__',D))
