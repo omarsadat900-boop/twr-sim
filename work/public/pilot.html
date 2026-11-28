@@ -623,7 +623,8 @@ function speedError(a,n){ const t=a.perf; if(!a.air) return 'Yerdeki uçağa IAS
   if(n>t.vmax) return `${t.name} için en yüksek hız ${t.vmax} kt. ${Math.round(n)} kt kabul edilmez.`; return ''; }
 const VEHTYPES=['Fire truck','Police','Ambulance','Follow-me','Passenger bus','Catering truck'];
 const VEHNAME={'Fire truck':'İtfaiye','Police':'Polis','Ambulance':'Ambulans','Follow-me':'Follow-Me','Passenger bus':'Yolcu otobüsü','Catering truck':'Catering'};
-const AIRLINES=['THY','PGT','AJA','SXS','KKK','TKJ','—'];
+const AIRLINES=['THY','PGT','TKJ','AJA','SXS','CAI','KKK','—'];
+const AIRLINE_NAME={THY:'Turkish Airlines',PGT:'Pegasus',TKJ:'AJet',AJA:'AJet (eski kod)',SXS:'SunExpress',CAI:'Corendon',KKK:'AtlasGlobal','—':'Yok / GA (tescil)'};
 function airlineOf(cs){ const p=cs.slice(0,3).toUpperCase(); return AIRLINES.includes(p)?p:'—'; }
 const APT={}; GEO.airports.forEach(a=>APT[a.c]=a);
 
@@ -1670,7 +1671,7 @@ function openAdd(which){
 document.querySelectorAll('#dlgAdd [data-tab]').forEach(b=>b.onclick=()=>openAdd(b.dataset.tab));
 $('secVeh').hidden=true;
 $('aType').innerHTML=['V','I'].map(c=>`<optgroup label="${c==='V'?'VFR kategorisi':'IFR kategorisi'}">`+Object.keys(TYPES).filter(t=>TYPES[t].cat===c).map(t=>`<option value="${t}">${TYPES[t].name}</option>`).join('')+'</optgroup>').join(''); $('aType').value='A320'; $('aRules').value='I';
-$('aAl').innerHTML=AIRLINES.map(t=>`<option>${t}</option>`).join('');
+$('aAl').innerHTML=AIRLINES.map(t=>`<option value="${t}">${t} · ${AIRLINE_NAME[t]||''}</option>`).join('');
 const HPN=NODES.filter(n=>n.hp).sort((x,y)=>x.hp.localeCompare(y.hp,'tr',{numeric:true}));
 $('aStand').innerHTML=Object.keys(STANDS).sort((a,b)=>a.localeCompare(b,'tr',{numeric:true})).map(s=>`<option>${s}</option>`).join('');
 $('aHp').innerHTML=HPN.map(n=>`<option value="${n.id}">${n.hp}${n.hpType==='runway'?'':' (ara)'}</option>`).join('');

@@ -3911,7 +3911,7 @@ const MODELS = (()=>{
     const ex=new THREE.Mesh(new THREE.ConeGeometry(r*0.42,len*0.28,14),M('#6b7178')); ex.rotation.x=Math.PI/2; ex.position.z=len/2-len*0.08+len*0.1; g.add(ex);
     return g; }
 
-  function aircraft(type,airline){
+  function aircraft(type,airline,cs){
     const s=S[type]||S.A320, g=new THREE.Group(), lv=LIV[type]||LIV.A320;
     const L=s.L, R=s.R, z0=-L/2; // nose at z0
     const nl=Math.min(L*0.13,R*(s.box?2.2:2.4)), tl=L*0.3;
@@ -3987,7 +3987,7 @@ const MODELS = (()=>{
     // real-type 3D model (glTF) when one is loaded: hide the hand-built airframe, keep the retractable gear and light anchors
     if(GLB[type]){ const T=GLB[type], own=T.userData.hasGear;
       for(const c of g.children) if(own||c!==gr) c.visible=false;
-      const m=T.clone(); m.position.set(0,own?0:fusY-R,z0); g.add(m); g.userData.glb=true;
+      const m=T.clone(); applyLivery(m,type,airline,cs); m.position.set(0,own?0:fusY-R,z0); g.add(m); g.userData.glb=true;
       if(own){ g.userData.gear=m.getObjectByName('gear'); g.userData.glbGear=true; }
       g.userData.wheels=(T.userData.wheels||[]).map(w=>({n:m.getObjectByName(w.name),r:w.r})).filter(w=>w.n); }
     return g;
@@ -4014,7 +4014,80 @@ const MODELS = (()=>{
         const d=x.getImageData(0,0,c.width,c.height), a=d.data; for(let i=0;i<a.length;i+=4) recolor(a,i); x.putImageData(d,0,0); old.map.image=c; old.map.needsUpdate=true; }
       if(old.map) old.map.encoding=THREE.LinearEncoding;   // same colour handling as the canvas-painted textures
       o.material=new THREE.MeshLambertMaterial({map:old.map||null,color:old.map?'#ffffff':old.color,side:THREE.DoubleSide,alphaTest:old.alphaTest||0,transparent:!!old.transparent,opacity:old.opacity}); });
-    const t=new THREE.Group(); t.add(piv); t.userData.hasGear=hasGear; t.userData.wheels=wheels.map(w=>({name:w.name,r:w.r*k})); GLB[type]=t; }
+    const t=new THREE.Group(); t.add(piv); t.userData.hasGear=hasGear; t.userData.wheels=wheels.map(w=>({name:w.name,r:w.r*k})); GLB[type]=t;
+    t.updateMatrixWorld(true); t.userData.liv=livBake(t,s.L); }
+  // ---------- airline liveries on the glTF models ----------
+  // Every vertex gets its position in aircraft space (x right, y up from the belly/wheels, z from the nose tip back to L).
+  // A side-view livery canvas is projected on the fuselage and the fin in the shader: paint covers the model's light paint
+  // (white / house colours) but not its dark details (windows, doors, cockpit), so the model keeps its detail.
+  function livBake(t,L){ const v=new THREE.Vector3(), X=[], Y=[]; let fin=-1e9;
+    t.traverse(o=>{ if(!o.isMesh) return; let g=o.geometry; if(g.attributes.lvp){ g=o.geometry=g.clone(); }
+      const P=g.attributes.position, a=new Float32Array(P.count*3);
+      for(let i=0;i<P.count;i++){ v.fromBufferAttribute(P,i).applyMatrix4(o.matrixWorld); a[i*3]=v.x; a[i*3+1]=v.y; a[i*3+2]=v.z;
+        if(v.z>L*0.17&&v.z<L*0.27){ X.push(Math.abs(v.x)); Y.push(v.y); }     // forward fuselage, ahead of wing and engines
+        if(v.z>L*0.75&&Math.abs(v.x)<0.6&&v.y>fin) fin=v.y; }
+      g.setAttribute('lvp',new THREE.BufferAttribute(a,3)); });
+    const q=(A,f)=>{ const s=A.slice().sort((x,y)=>x-y); return s[Math.min(s.length-1,Math.floor(f*s.length))]; };
+    let bel=Y.length?q(Y,0.01):0, top=Y.length?q(Y,0.99):L*0.1, hw=X.length?q(X,0.99):(top-bel)/2;
+    if(!(top>bel)){ bel=0; top=L*0.1; } if(!(fin>top)) fin=top+(top-bel)*1.5;
+    return {L,bel,top,fin,hw}; }
+  const LIVERY={};   // airline code -> painter(ctx, side helpers)
+  const navy='#1f2f5c';
+  function finBox(c,G,col){ c.fillStyle=col; c.fillRect(G.X(G.fu),0,G.W-G.X(G.fu),G.Y(G.cv+0.04)); }
+  LIVERY.THY=G=>{ const c=G.c; G.body('#ffffff'); finBox(c,G,'#c8102e');
+    const cx=G.X(G.fu+(1-G.fu)*0.58), cy=G.Y(G.cv+(1-G.cv)*0.55), r=Math.min((G.Y(G.cv)-G.Y(1))*0.24,(G.W-G.X(G.fu))*0.2);
+    c.fillStyle='#ffffff'; c.beginPath(); c.ellipse(cx,cy,r*G.ax,r,0,0,7); c.fill();
+    c.fillStyle='#c8102e'; c.beginPath(); c.ellipse(cx-r*0.1*G.ax,cy+r*0.05,r*0.62*G.ax,r*0.22,-0.5,0,7); c.fill(); c.beginPath(); c.ellipse(cx+r*0.35*G.ax,cy-r*0.35,r*0.16*G.ax,r*0.12,0,0,7); c.fill();
+    G.text('TURKISH AIRLINES',0.36,G.tv,G.th*0.9,navy,'bold'); };
+  LIVERY.TKJ=LIVERY.AJA=G=>{ const c=G.c; G.body('#ffffff'); finBox(c,G,'#14193d');
+    c.fillStyle='#e30a17'; c.beginPath(); c.moveTo(G.X(G.fu+0.03),G.Y(G.cv+0.06)); c.quadraticCurveTo(G.X(0.93),G.Y(G.cv+0.2),G.X(0.99),G.Y(0.92)); c.lineTo(G.X(0.99),G.Y(0.84)); c.quadraticCurveTo(G.X(0.9),G.Y(G.cv+0.12),G.X(G.fu+0.08),G.Y(G.cv+0.04)); c.fill();
+    G.text('AJet',0.3,G.tv,G.th*1.5,'#14193d','bold'); };
+  LIVERY.PGT=G=>{ const c=G.c; G.body('#ffffff'); finBox(c,G,'#ffffff');
+    [['#ffd200',0],['#f39200',1],['#e2001a',2],['#6c2a83',3]].forEach(([col,i])=>{ c.fillStyle=col; const a=G.fu+(1-G.fu)*(0.05+i*0.16);
+      c.beginPath(); c.moveTo(G.X(a),G.Y(G.cv)); c.lineTo(G.X(a+(1-G.fu)*0.16),G.Y(G.cv)); c.lineTo(G.X(Math.min(1,a+(1-G.fu)*0.55)),G.Y(1)); c.lineTo(G.X(Math.min(1,a+(1-G.fu)*0.39)),G.Y(1)); c.fill(); });
+    G.text('Pegasus',0.34,G.tv,G.th*1.2,'#6c2a83','bold italic'); G.band(G.bv,G.bv+(G.cv-G.bv)*0.12,0.0,1,'#ffd200'); };
+  LIVERY.SXS=G=>{ const c=G.c; G.body('#ffffff'); finBox(c,G,'#0b2a5b');
+    const cx=G.X(G.fu+(1-G.fu)*0.6), cy=G.Y(G.cv+(1-G.cv)*0.5), r=(G.Y(G.cv)-G.Y(1))*0.26; const gr=c.createRadialGradient(cx,cy,0,cx,cy,r);
+    gr.addColorStop(0,'#ffd23f'); gr.addColorStop(1,'#f7941d'); c.fillStyle=gr; c.beginPath(); c.ellipse(cx,cy,r*G.ax,r,0,0,7); c.fill();
+    G.text('SunExpress',0.34,G.tv,G.th*1.05,'#0b2a5b','bold'); G.band(G.bv,G.bv+(G.cv-G.bv)*0.16,0.25,1,'#f7941d'); };
+  LIVERY.CAI=G=>{ const c=G.c; G.body('#ffffff'); finBox(c,G,'#e0001b'); c.fillStyle='#ffffff';
+    G.text('C',G.fu+(1-G.fu)*0.6,G.cv+(1-G.cv)*0.4,(1-G.cv)*0.5,'#ffffff','bold',G.c);
+    G.text('Corendon',0.34,G.tv,G.th*1.1,'#e0001b','bold'); };
+  // general aviation (no airline): white with red / navy cheat lines and the registration (callsign) on the rear fuselage
+  LIVERY.GA=G=>{ const c=G.c; G.body('#ffffff'); finBox(c,G,'#ffffff');
+    const m=G.bv+(G.cv-G.bv)*0.42; G.band(m,m+(G.cv-G.bv)*0.08,0,1,'#c8102e'); G.band(m-(G.cv-G.bv)*0.06,m,0,1,navy);
+    c.fillStyle='#c8102e'; c.beginPath(); c.moveTo(G.X(G.fu),G.Y(G.cv+0.05)); c.lineTo(G.X(1),G.Y(0.75)); c.lineTo(G.X(1),G.Y(0.62)); c.lineTo(G.X(G.fu),G.Y(G.cv)); c.fill();
+    if(G.reg) G.text(G.reg,0.62,G.cv-(G.cv-G.bv)*0.25,(G.cv-G.bv)*0.3,navy,'bold'); };
+  const GA_TYPES={C172:1,BE40:1,GLF4:1,GLF5:1};
+  function liveryKey(type,airline,cs){ if(LIVERY[airline]) return airline; if(GA_TYPES[type]) return 'GA'; return null; }
+  function liveryTex(type,key,reg){ const B=GLB[type].userData.liv, id='liv_'+type+'_'+key+(key==='GA'?'_'+reg:'');
+    return canvasTex(id,2048,512,(c,W,H2)=>{ const H=H2/2, span=B.fin-B.bel, mpu=B.L/W, mpv=span/H;
+      for(const side of [0,1]){ c.save(); c.translate(0,side*H); c.beginPath(); c.rect(0,0,W,H); c.clip();
+        const G={c,W,H,reg,ax:mpv/mpu,X:u=>u*W,Y:v=>(1-v)*H,bv:0,cv:(B.top-B.bel)/span,fu:0.7};
+        G.tv=G.bv+(G.cv-G.bv)*0.8; G.th=(G.cv-G.bv)*0.22;
+        G.body=col=>{ c.fillStyle=col; c.fillRect(0,G.Y(G.cv+0.02),W,G.Y(0)-G.Y(G.cv+0.02)+2); };
+        G.band=(v0,v1,u0,u1,col)=>{ c.fillStyle=col; c.fillRect(G.X(u0),G.Y(v1),G.X(u1)-G.X(u0),G.Y(v0)-G.Y(v1)); };
+        // text reads normally from either side: on the right side (+x, nose to the viewer's right) it is drawn mirrored
+        G.text=(str,u,v,h,col,w)=>{ const px=h*H; c.save(); c.translate(G.X(u),G.Y(v)); c.scale(side?-1:1,1); c.scale(mpv/mpu,1);
+          c.fillStyle=col; c.font=(w||'bold')+' '+Math.round(px)+'px Arial,Helvetica,sans-serif'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(str,0,0); c.restore(); };
+        LIVERY[key](G); c.restore(); } }); }
+  const livMats=new Map();
+  function livMaterial(m,tex,B){ const k=m.uuid+'|'+tex.uuid; if(livMats.has(k)) return livMats.get(k);
+    const n=m.clone(); n.onBeforeCompile=sh=>{
+      sh.uniforms.livMap={value:tex}; sh.uniforms.livB={value:new THREE.Vector4(B.L,B.bel,B.top,B.fin)}; sh.uniforms.livW={value:B.hw};
+      sh.vertexShader='attribute vec3 lvp;\nvarying vec3 vLvp;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n vLvp=lvp;');
+      sh.fragmentShader='uniform sampler2D livMap;\nuniform vec4 livB;\nuniform float livW;\nvarying vec3 vLvp;\n'+sh.fragmentShader.replace('#include <map_fragment>',`#include <map_fragment>
+  { float u=vLvp.z/livB.x, v=(vLvp.y-livB.y)/(livB.w-livB.y), cv=(livB.z-livB.y)/(livB.w-livB.y), ax=abs(vLvp.x);
+    float fus=step(ax,livW*1.06)*step(v,cv+0.03)*step(-0.02,v), fin=step(ax,livW*0.75)*step(cv+0.03,v)*step(0.55,u);
+    vec4 L=texture2D(livMap,vec2(clamp(u,0.0,1.0),clamp(v,0.0,1.0)*0.5+(vLvp.x>0.0?0.0:0.5)));
+    vec3 c=diffuseColor.rgb; float mx=max(c.r,max(c.g,c.b)), mn=min(c.r,min(c.g,c.b));
+    float paint=fin>0.5?1.0:smoothstep(0.30,0.45,mx)*(1.0-smoothstep(0.55,0.8,mx-mn+0.0));
+    diffuseColor.rgb=mix(c,L.rgb*(0.82+0.18*smoothstep(0.3,0.9,mx)),L.a*paint*max(fus,fin)); }`); };
+    n.customProgramCacheKey=()=>'liv'; livMats.set(k,n); return n; }
+  function applyLivery(m,type,airline,cs){ const key=liveryKey(type,airline,cs); if(!key||!GLB[type]||!GLB[type].userData.liv) return;
+    const reg=/^TC-?[A-Z]{3}$/.test(cs||'')?(cs.replace(/^TC-?/,'TC-')):(cs||'');
+    const tex=liveryTex(type,key,reg), B=GLB[type].userData.liv; if(!tex) return;
+    m.traverse(o=>{ if(o.isMesh&&o.geometry.attributes.lvp&&o.material.map) o.material=livMaterial(o.material,tex,B); }); }
 
   // ---------- vehicles ----------
   // beacon glow: additive sprite with a fixed on-screen size, so the flash reads from the tower at any zoom
@@ -4130,7 +4203,7 @@ const MODELS = (()=>{
     (u.flashers||[]).forEach(f=>{ const on=((t*f.rate+f.ph)%1)<0.45; f.m.material=on?f.on:f.off; if(f.sp) f.sp.visible=on; });
     if(u.props&&u.props.length){ const sp=state&&state.eng?(state.ias>5?40:25):0; u.props.forEach(p=>p.rotation.z+=sp*0.016); }
   }
-  return { aircraft, vehicle, tug, animate, useGLB, useVehGLB, hasVehGLB:t=>!!VGLB[t], hasGLB:t=>!!GLB[t], SPEC:S, VTYPE };
+  return { _GLB:GLB, aircraft, vehicle, tug, animate, useGLB, useVehGLB, hasVehGLB:t=>!!VGLB[t], hasGLB:t=>!!GLB[t], SPEC:S, VTYPE };
 })();
 // ---------- fire effect for a crash (GND-05) ----------
 MODELS.fire=function(size){ const g=new THREE.Group(), k=size||1, parts=[];
@@ -4910,7 +4983,7 @@ function trafficFrame(now){
   const wall=performance.timeOrigin+now;   // wall-clock time of this frame
   for(const a of best.values()){
     seen.add(a.id); let o=objs.get(a.id);
-    if(!o||o.type!==a.type){ if(o){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); if(o.tug) scene.remove(o.tug.g); } if(a.kind!=='veh') needGLB(a.type); else needVehGLB(a.type); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),buf:[],type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
+    if(!o||o.type!==a.type){ if(o){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); if(o.tug) scene.remove(o.tug.g); } if(a.kind!=='veh') needGLB(a.type); else needVehGLB(a.type); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline,a.cs),buf:[],type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
     const ts=a.ts||null, key=ts||(a.pos[0]+','+a.pos[1]+','+a.hdg+','+a.alt);
     if(o.key!==key){ o.key=key; const sts=ts||wall; clkSample(wall-sts);
       const s={ts:sts,p:a.pos.slice(),alt:a.alt,h:a.hdg,v:a.v||[0,0],vz:a.vz||0}, L=o.buf[o.buf.length-1];
