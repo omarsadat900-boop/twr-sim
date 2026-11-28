@@ -725,7 +725,7 @@ function trafficFrame(now){
   const wall=performance.timeOrigin+now;   // wall-clock time of this frame
   for(const a of best.values()){
     seen.add(a.id); let o=objs.get(a.id);
-    if(!o||o.type!==a.type){ if(o){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); if(o.tug) scene.remove(o.tug.g); } if(a.kind!=='veh') needGLB(a.type); else needVehGLB(a.type); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),buf:[],type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
+    if(!o||o.type!==a.type){ if(o){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); if(o.tug) scene.remove(o.tug.g); } if(a.kind!=='veh') needGLB(a.type); else needVehGLB(a.type); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline,a.cs),buf:[],type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
     const ts=a.ts||null, key=ts||(a.pos[0]+','+a.pos[1]+','+a.hdg+','+a.alt);
     if(o.key!==key){ o.key=key; const sts=ts||wall; clkSample(wall-sts);
       const s={ts:sts,p:a.pos.slice(),alt:a.alt,h:a.hdg,v:a.v||[0,0],vz:a.vz||0}, L=o.buf[o.buf.length-1];
