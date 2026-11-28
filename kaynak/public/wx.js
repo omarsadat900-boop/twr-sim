@@ -17,6 +17,8 @@ const WXM = (()=>{
     // instantaneous wind, called every second by the owner
     st.tick=function(dt){
       const I=st.inp; st.t+=dt;
+      // a new wind typed by the instructor takes effect at once: the 2' and 10' figures start over from the new wind
+      const wk=[I.dirMin,I.dirMax,I.spdMin,I.spdMax].join(','); if(st.wk!==undefined&&st.wk!==wk) st.hist.length=0; st.wk=wk;
       const span=((I.dirMax-I.dirMin)%360+360)%360;
       let dir=I.dirMin+span*st.wd(dt), spd=I.spdMin+(I.spdMax-I.spdMin)*st.ws(dt);
       if(I.storm){ spd+= (Math.random()<0.15? 8+Math.random()*10 : 0); dir+=(Math.random()-0.5)*40; }

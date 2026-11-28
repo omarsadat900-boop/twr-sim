@@ -483,7 +483,7 @@ function rwyGates(P){ const gates=[], end=P.cum.at(-1);
         gates.push({s:gs,rwy:id,hp}); }
       prev=inn; if(sp>=end) break; } }
   return gates.sort((x,y)=>x.s-y.s); }
-const TAXIMAX=a=>a.kind==='veh'?200:30, taxiDef=a=>a.kind==='veh'?20:15;
+const TAXIMAX=a=>a.kind==='veh'?200:60, taxiDef=a=>a.kind==='veh'?20:15;
 function startPath(a,pts,o){
   if(pts.length<2) return;
   if(o.mode==='taxi'&&a.taxiSpd&&o.spd>=10) o={...o,spd:a.taxiSpd};
@@ -548,7 +548,7 @@ function endPath(a){
   else if(P.onEnd==='bt'){ a.mode='stopped'; a.status=`Backtrack tamam (${P.arg}), 180° Turn bekliyor`; }
   else if(P.onEnd==='turned'){ a.hdg=norm360(a.hdg); const id=onRwy(a), E=id&&RWP[id]?[...DATA.runways.find(r=>r.id===id).ends].find(e=>Math.abs(norm180(RW[e].qfu-a.hdg))<25):null;
     if(E&&a.lineClr===id){ alignOnRwy(a,E); a.mode='lined'; a.lineEnd=E; a.rwy=E; a.status='180° tamam, hizalı '+E+', kalkış bekliyor'; } else { a.mode='stopped'; a.status='180° dönüş tamam'; } }
-  else if(P.onEnd==='pushed'){ a.mode='stopped'; a.status='Pushback tamam'; }
+  else if(P.onEnd==='pushed'){ a.mode='stopped'; a.status='Pushback tamam'+(a.tug?' · face '+a.tug.face:''); if(a.tug){ a.tug.ph='leave'; a.tug.t=0; } }
   else if(P.onEnd==='vacated'){ a.mode='stopped'; a.status='Pisti terk etti'; toast(`${a.cs} pisti terk etti, taksi talimatı bekliyor`); }
   else { a.mode='stopped'; a.status=a.kind==='veh'?'Bekliyor':'Taksi bitti'; }
   renderStrips(); renderFMS();
@@ -561,7 +561,7 @@ function windAt(){ return WX.cur; }
 function stepAir(a,dt){
   nav(a,dt); if(a.seq!=null) seqStep(a);
   // heading
-  const d=norm180(a.tgt.hdg-a.hdg), rate=a.nav==="orbit"?clamp(1123/Math.max(60,a.ias),a.perf.rate||3,9):(a.perf.rate||3);   // orbit: ~35° bank, tight circle
+  const d=norm180(a.tgt.hdg-a.hdg), rate=turnRate(a);   // orbit: ~35° bank, tight circle
   let turn=a.forceTurn? a.forceTurn*rate : clamp(d,-rate,rate)/1;
   turn=clamp(turn,-rate,rate); a.turn=(a.turn||0)+clamp(turn-(a.turn||0),-rate*0.7*dt,rate*0.7*dt);   // bank in/out smoothly (~1.5 s)
   a.hdg=norm360(a.hdg+a.turn*dt);
@@ -612,12 +612,15 @@ function approach(a,dt){
     a.tgt.hdg=norm360(R.qfu-clamp(xt/40,-45,45));   // steer toward the centreline
     if(Math.abs(xt)<250&&hd<35){ a.app.est=true; a.status=(a.app.visual?'Görerek yaklaşma ':'ILS yakalandı ')+a.app.end; renderStrips(); }
   } else {
-    a.tgt.hdg=norm360(R.qfu-clamp(xt/25,-15,15));
-    const tdz=a.ldg&&a.tdz?a.tdz:300, gp=R.elev+Math.max(0,along+tdz)/NM*318;
+    const tdz=a.ldg&&a.tdz?a.tdz:300;
+    // short approach lines up late and firmly: aim to be on the centreline well before touchdown, with a little lead for the drift
+    const xp=xt+3*(a.gs||a.ias)*KT*Math.sin(norm180(a.hdg-R.qfu)*D2R);
+    a.tgt.hdg=a.app.short?norm360(R.qfu-clamp(Math.atan2(xp,Math.max(60,(along+tdz)*0.2))/D2R,-50,50)):norm360(R.qfu-clamp(xt/25,-15,15));
+    const gp=R.elev+Math.max(0,along+tdz)/NM*318;
     if(a.alt>gp-30) a.glide=gp;
     a.tgt.spd=along>8*NM?Math.min(a.tgt.spd,210):along>5*NM?180:along>3*NM?a.perf.vapp+15:along>0.3*NM?a.perf.vapp:a.perf.vref;
     if(!a.ldg&&along<=DECISION){ goAround(a,'iniş izni yok, karar noktası'); return; }
-    if(along<1.5*NM) a.tgt.hdg=norm360(R.qfu-clamp(xt/4,-10,10));   // short final: tighten onto the centreline
+    if(along<1.5*NM&&!(a.app.short&&Math.abs(xt)>6)) a.tgt.hdg=norm360(R.qfu-clamp(xt/4,-10,10));   // short final: tighten onto the centreline
     if(a.ldg&&along<=-tdz+15){ if(a.perf.gear&&a.gearK<1){ goAround(a,'iniş takımı kilitlenmedi'); return; }
       if(Math.abs(xt)>4||Math.abs(norm180(a.hdg-R.qfu))>6){ goAround(a,'centerline\'a teker koyamadı (xt '+xt.toFixed(1)+' m, '+norm180(a.hdg-R.qfu).toFixed(1)+'°)'); alertPilot(`${a.cs} centerline'a teker koyamadı, PAS GEÇTİ. Yeni talimat ver (downwind / right-hand downwind / short approach).`); return; }
       touchdown(a,R); }
@@ -633,7 +636,10 @@ function patLegs(E,hand,w){ const R=RW[E], D=patDims(w), P=(al,o)=>patP(E,hand,a
   return { dep:[P(0,0),P(R.len+D.C,0)], up:[P(0,-0.25*NM),P(R.len,-0.25*NM)], cw:[P(R.len+D.C,0),P(R.len+D.C,D.W)],
     dw:[P(R.len+D.C,D.W),P(-5*NM,D.W)], base:[P(-5*NM,D.W),P(-5*NM,0)], fin:[P(-5*NM,0),P(0,0)] }; }
 function flyLine(a,P0,h){ const v=[a.pos[0]-P0[0],a.pos[1]-P0[1]], r=hv(h+90), e=v[0]*r[0]+v[1]*r[1]; a.tgt.hdg=norm360(h-clamp(e*0.04,-35,35)); return e; }
-const turnLead=a=>{ const v=(a.gs||a.ias)*KT, w=(a.perf.rate||3)*D2R; return v/w; };
+// orbit: ~35° bank, tight circle. Short approach (circuit and its final): ~30° bank, so it can turn in sharply from where it is
+const isShort=a=>(a.nav==='circuit'&&a.cir&&a.cir.short)||(a.nav==='app'&&a.app&&a.app.short);
+function turnRate(a){ const r=a.perf.rate||3; return a.nav==="orbit"?clamp(1123/Math.max(60,a.ias),r,9):isShort(a)?clamp(930/Math.max(60,a.ias),r,7):r; }
+const turnLead=a=>{ const v=(a.gs||a.ias)*KT, w=turnRate(a)*D2R; return v/w; };
 // fly toward a straight line through P0 with heading h, cutting in at most maxCut degrees and easing onto it (no overshoot)
 function interceptLine(a,P0,h,maxCut){ const v=[a.pos[0]-P0[0],a.pos[1]-P0[1]], r=hv(h+90), e=v[0]*r[0]+v[1]*r[1], k=maxCut/Math.max(300,1.4*turnLead(a));
   a.tgt.hdg=norm360(h-clamp(e*k,-maxCut,maxCut)); return e; }
@@ -654,7 +660,7 @@ function circuit(a,dt){
   const dwH=norm360(R.qfu+180), baseH=norm360(R.qfu+(C.hand==='L'?90:-90)), dir=C.hand==='L'?-1:1, TL=turnLead(a);
   const pre=C.short?'Short approach · ':'';
   const leg=n=>{ C.leg=n; a.status=pre+({upwind:'Upwind',xwind:'Crosswind',join:'Downwind\'e katılıyor',downwind:'Downwind',baseturn:'Base dönüşü',base:'Base leg',finalturn:'Final dönüşü'})[n]+' '+C.end+(n==='downwind'&&C.baseReq&&!C.short?' · turn base':''); renderStrips(); renderFMS(); };
-  a.tgt.alt=cAlt; a.tgt.spd=patSpd(a);
+  a.tgt.alt=cAlt; a.tgt.spd=C.short?Math.min(patSpd(a),a.perf.vapp+20):patSpd(a);
   if(C.leg==='upwind'){ interceptLine(a,R.thr,R.qfu,20); if(al>=Math.max(0.35*R.len,0.4*NM)&&a.alt>R.elev+400) leg('xwind'); return; }
   if(C.leg==='xwind'){ const xH=norm360(R.qfu+(C.hand==='L'?-90:90)); a.tgt.hdg=xH; if(Math.abs(norm180(a.hdg-xH))>10) a.forceTurn=dir;
     if(off>=D.W-1.1*turnLead(a)) leg('join'); return; }
@@ -667,9 +673,13 @@ function circuit(a,dt){
   if(C.leg==='downwind'){ interceptLine(a,patP(C.end,C.hand,0,D.W),dwH,30);
     if(C.baseReq&&al<=-D.B+TL) leg('baseturn'); return; }
   a.tgt.alt=R.elev+clamp(Math.max(0,-al)/NM*318+250,500,D.h-200); a.tgt.spd=a.perf.vapp+10;   // descend on base toward a normal glide path
-  if(C.leg==='baseturn'){ a.tgt.hdg=baseH; a.forceTurn=dir;
-    if(Math.abs(norm180(a.hdg-baseH))<10){ a.forceTurn=0; C.baseAl=Math.min(al,-0.4*NM); leg('base'); } return; }
+  if(C.leg==='direct'){ const P=patP(C.end,C.hand,-C.dA,Math.max(2.3*TL,0.45*D.W)), d=steerTo(a,P);   // short approach from the downwind: cut straight in to a short base
+    a.status=pre+'Base\'e direkt dönüyor '+C.end; if(d<0.8*TL||al<=-C.dA){ C.baseAl=-C.dA; C.finalReq=true; leg('baseturn'); } return; }
+  if(C.leg==='baseturn'){ a.tgt.hdg=baseH; if(Math.abs(norm180(a.hdg-baseH))>60||!C.dA) a.forceTurn=dir;
+    if(Math.abs(norm180(a.hdg-baseH))<10){ a.forceTurn=0; C.baseAl=C.dA?-C.dA:Math.min(al,-0.4*NM); leg('base'); } return; }
   if(C.leg==='base'){ interceptLine(a,patP(C.end,C.hand,C.baseAl,0),baseH,20);
+    if(C.short&&C.dA&&off<=1.15*TL+(a.gs||a.ias)*KT*1.2){   // short approach: roll straight into a curved final that ends on the centreline
+      a.forceTurn=0; a.nav='app'; a.app={end:C.end,est:true,visual:true,ph:'int',fd:0,fromPat:true,short:true}; a.status='Short approach final '+C.end+(a.ldg?' · iniş izni':''); renderStrips(); renderFMS(); return; }
     if(C.finalReq&&off<=1.15*TL+(a.gs||a.ias)*KT*1.2) leg('finalturn'); return; }
   if(C.leg==='finalturn'){ a.tgt.hdg=R.qfu; a.forceTurn=dir;
     const hd=Math.abs(norm180(a.hdg-R.qfu)); if(hd<12){ a.forceTurn=0; a.nav='app'; a.app={end:C.end,est:false,visual:true,ph:'int',fd:0,fromPat:true,short:C.short};
@@ -776,8 +786,9 @@ function cmd(k){
     case 'push': {
       if(a.mode!=='parked'||!a.stand){ toast('Pushback sadece park yerindeki uçak için.'); return; }
       const s=STANDS[a.stand], li=ADJ[s.node].find(x=>EDGES[x.e].kind==='leadin'); if(!li){ toast('Bu park yerinin geri itme çizgisi yok.'); return; }
-      a.stand=null; startPath(a,pushPts(a,li),{spd:3,back:true,mode:'push',onEnd:'pushed',status:'Pushback'}); break; }
+      openPush(a,li); return; }
     case 'pushstop': case 'taxistop': {
+      if(a.tug&&a.tug.ph==='connect'){ a.tug=null; a.mode='parked'; a.status='Pushback iptal'; break; }
       if(!a.path){ toast('Uçak hareket etmiyor.'); return; }
       if(a.mode==='hold-taxi'){ a.mode=a.prevMode; a.status=a.prevStatus; } else { a.prevMode=a.mode; a.prevStatus=a.status; a.mode='hold-taxi'; a.status='Durdu (bekliyor)'; }
       break; }
@@ -889,6 +900,11 @@ const TDZL={}; const tdzLbl=(E,d)=>(TDZL[E]&&TDZL[E][d])||d+' m';
 // short approach after a go-around: a tight circuit on the side the aircraft is on, then lands at the chosen point
 function shortApp(a,E,d){ setMode(null); if(!a.air) return; const R=RW[E], v=[a.pos[0]-R.thr[0],a.pos[1]-R.thr[1]], sL=patSide(E,'L'), hand=(v[0]*sL[0]+v[1]*sL[1])>=0?'L':'R';
   joinPattern(a,E,hand,{short:true,ldg:true}); a.tdz=d; a.ga=false; a.gearUp=false; if(a.perf.gear) a.gearDown=true;
+  // already out on the downwind side, flying away from the threshold, not yet lined up: no long final. Turn in sharply from
+  // here: if it is already past the base point, base turn now; otherwise cut straight to a short final turn point.
+  { const C=a.cir, D=cirDims(a,C), sd=patSide(E,hand), w=[a.pos[0]-R.thr[0],a.pos[1]-R.thr[1]], al=w[0]*R.u[0]+w[1]*R.u[1], off=w[0]*sd[0]+w[1]*sd[1];
+    if(C&&C.leg!=='upwind'&&off>0.3*D.W&&Math.abs(norm180(a.hdg-(R.qfu+180)))<70){ const TL=turnLead(a), A=Math.max(1.0*NM,2.6*TL);
+      if(al<=-A) C.leg='baseturn'; else { C.leg='direct'; C.dA=A; } } }
   a.status=`Short approach ${E} (${hand==='L'?'sol':'sağ'}) · TDZ ${d} m`; toast(`${a.cs} short approach RWY ${E}, touchdown ${d} m`); renderStrips(); renderFMS(); }   // touchdown zones (m past the threshold)
 const tdzPt=(E,d)=>[RW[E].thr[0]+RW[E].u[0]*d,RW[E].thr[1]+RW[E].u[1]*d];
 function clearLand(a,E,d){ if(!a.air){ setMode(null); return; } a.ldg=true; a.tdz=d; a.rwy=E; if(a.perf.gear&&!a.gearDown){ a.gearDown=true; }
@@ -899,15 +915,34 @@ function twyDist(src,ban){ const N=NODES.length, D=new Float64Array(N).fill(Infi
   for(;;){ let u=-1,bd=Infinity; for(let i=0;i<N;i++) if(!done[i]&&D[i]<bd){bd=D[i];u=i;} if(u<0) return Infinity; done[u]=1;
     if(ADJ[u].some(x=>EDGES[x.e].kind==='taxiway'||EDGES[x.e].kind==='runway')) return D[u];
     for(const {e,o} of ADJ[u]){ if(o===ban||EDGES[e].kind==='leadin') continue; const w=D[u]+EDGES[e].len; if(w<D[o]) D[o]=w; } } }
-function pushPts(a,li){
+function pushLanes(li){ const L0=li.o; return ADJ[L0].filter(x=>x.e!==li.e&&EDGES[x.e].kind!=='leadin'); }
+function pushPts(a,li,pick){
   const L0=li.o, pts=[mainPt(a),[NODES[L0].x,NODES[L0].y]];
-  const lanes=ADJ[L0].filter(x=>x.e!==li.e&&EDGES[x.e].kind!=='leadin'); if(!lanes.length) return pts;
-  let pick=lanes[0], best=-1; lanes.forEach(x=>{ const v=EDGES[x.e].len+twyDist(x.o,L0); const w=isFinite(v)?v:1e6; if(w>best){ best=w; pick=x; } });
+  const lanes=pushLanes(li); if(!lanes.length) return pts;
+  if(!pick){ pick=lanes[0]; let best=-1; lanes.forEach(x=>{ const v=EDGES[x.e].len+twyDist(x.o,L0); const w=isFinite(v)?v:1e6; if(w>best){ best=w; pick=x; } }); }
   let need=4*wbase(a), from=L0, x=pick;
   while(x&&need>0){ const E=EDGES[x.e], p=E.a===from?E.pts:E.pts.slice().reverse();
     for(let i=1;i<p.length&&need>0;i++){ const l=dist(p[i-1],p[i]); if(l>=need){ const t=need/l; pts.push([p[i-1][0]+(p[i][0]-p[i-1][0])*t,p[i-1][1]+(p[i][1]-p[i-1][1])*t]); need=0; } else { pts.push(p[i].slice()); need-=l; } }
     const prev=from; from=x.o; x=need>0?ADJ[from].find(y=>y.o!==prev&&EDGES[y.e].kind!=='leadin'&&EDGES[y.e].kind!=='runway'):null; }
   return pts; }
+// "push and start approved, face west": the pilot picks which way the nose ends up. A pushback tug comes first and connects
+// (nothing moves without it), pushes, then disconnects and drives away.
+const COMPASS=['north','north-east','east','south-east','south','south-west','west','north-west'];
+const faceName=h=>COMPASS[Math.round(norm360(h)/45)%8];
+function openPush(a,li){
+  const opts=pushLanes(li).map(x=>{ const pts=pushPts(a,li,x), n=pts.length; const h=n>=2?brg(pts[n-1],pts[n-2]):a.hdg; return {x,pts,h}; })
+    .filter(o=>o.pts.length>=3);
+  if(!opts.length){ opts.push({pts:pushPts(a,li),h:a.hdg}); }
+  acmKind='push'; $('acmT').textContent='Pushback: '+a.cs;
+  $('acmBody').innerHTML='<div class="hint" style="margin:0 0 6px">ATC: "push and start approved, face …". Pushback bitince burun hangi yöne baksın?</div><div style="display:flex;flex-wrap:wrap;gap:6px">'+
+    opts.map((o,i)=>`<button class="btn" data-face="${i}">Face ${faceName(o.h)} (${String(Math.round(norm360(o.h))).padStart(3,'0')}°)</button>`).join('')+'</div>';
+  document.querySelectorAll('[data-face]').forEach(b=>b.onclick=()=>{ const o=opts[+b.dataset.face]; $('dlgAcm').hidden=true; startTug(a,o.pts,faceName(o.h)); });
+  $('acmErr').textContent=''; $('dlgAcm').hidden=false; }
+const TUG_CONNECT=8, TUG_LEAVE=10;   // seconds (sim time) for the tug to connect and to disconnect/drive off
+function startTug(a,pts,face){ a.tug={ph:'connect',t:0,pts,face}; a.mode='tug'; a.ias=0; a.status='Pushback aracı bağlanıyor (face '+face+')'; renderStrips(); renderFMS(); }
+function stepTug(a,dt){ const T=a.tug; if(!T) return; T.t+=dt;
+  if(T.ph==='connect'&&T.t>=TUG_CONNECT){ T.ph='push'; T.t=0; a.stand=null; startPath(a,T.pts,{spd:3,back:true,mode:'push',onEnd:'pushed',status:'Pushback · face '+T.face}); renderStrips(); renderFMS(); }
+  else if(T.ph==='leave'&&T.t>=TUG_LEAVE){ a.tug=null; } }
 function beginRoute(a,why){ setMode({k:'route',a,why,picks:[],preview:null}); }
 function rebuildRoute(m){
   const a=m.a; if(!m.picks.length){ m.preview=null; return; }
@@ -1066,6 +1101,7 @@ function simStep(dt){
     if(a.mode==='hold-taxi') continue;
     if(a.mode==='crash'){ stepCrash(a,dt); continue; }
     if(!a.air&&a.mode!=='tkof'&&a.pitch){ a.tdHold=(a.tdHold||0)-dt; if(a.tdHold<=0) a.pitch=Math.max(0,a.pitch-1.6*dt); }   // main gear first, nose wheel comes down ~1.5 s later
+    if(a.tug) stepTug(a,dt);
     if(a.path){ stepPath(a,dt); continue; }
     if(a.mode==='tkof') stepTakeoff(a,dt);
     else if(a.mode==='rto') stepStopRun(a,dt);
@@ -1138,7 +1174,7 @@ function draw(){
   if(s>0.004){
     ctx.fillStyle='#8f9499'; DATA.pavement.forEach(p=>{poly(p);ctx.fill();});
     ctx.fillStyle='#1e2a23'; DATA.holes.forEach(p=>{poly(p);ctx.fill();});
-    { ctx.strokeStyle='#8f9499'; ctx.lineJoin='round'; ctx.lineCap='round'; const EL=(window.EDH&&EDH.on)?EDH.L.edges:EDGES; for(const e of EL){ if(e.kind==='runway') continue; ctx.lineWidth=Math.max((e.kind==='leadin'?16:23)*1.6*s,(e.kind==='leadin'?16:23)/60*RWMINPX*1.15); line(e.pts); ctx.stroke(); } ctx.lineCap='butt'; }
+    { ctx.strokeStyle='#8f9499'; ctx.lineJoin='round'; ctx.lineCap='round'; const EL=(window.EDH&&EDH.on)?EDH.L.edges:EDGES; for(const e of EL){ if(e.kind==='runway') continue; ctx.lineWidth=Math.max((e.kind==='leadin'?16:23)*2.0*s,(e.kind==='leadin'?16:23)/60*RWMINPX*1.15); line(e.pts); ctx.stroke(); } ctx.lineCap='butt'; }
     ctx.strokeStyle='#8f9499'; ctx.lineCap='butt'; for(const l of (DATA.pave_lines||[])){ line(l.pts); ctx.lineWidth=l.w*s; ctx.stroke(); } ctx.lineCap='round';
     if(DATA.buildings&&s>0.05){ ctx.lineWidth=1; DATA.buildings.forEach(b=>{poly(b.pts);ctx.fillStyle='#4f7fb3';ctx.fill();ctx.strokeStyle='#22405f';ctx.stroke();}); }
     for(const r of DATA.runways){ const a=r.thr[r.ends[0]].xy,b=r.thr[r.ends[1]].xy,L=dist(a,b),n=[-(b[1]-a[1])/L*r.width/2,(b[0]-a[0])/L*r.width/2];
@@ -1215,7 +1251,9 @@ function draw(){
       ctx.fillStyle='#ffe14a'; ctx.font='10px ui-monospace,Menlo,monospace'; ctx.fillText(a.cs,q[0]+8,q[1]-6); continue; }
     if(!a.air&&s>0.08){ // ground: plane shape to scale (min size)
       const k=Math.max(1,s*0.9); ctx.save(); ctx.translate(q[0],q[1]); ctx.rotate(a.hdg*D2R); ctx.scale(k,k); ctx.fillStyle=sel?'#00e5ff':'#f2f2f2';
-      ctx.beginPath(); ctx.moveTo(0,-18); ctx.lineTo(2,-14); ctx.lineTo(2,-4); ctx.lineTo(17,3); ctx.lineTo(17,6); ctx.lineTo(2,2); ctx.lineTo(2,11); ctx.lineTo(6,15); ctx.lineTo(6,17); ctx.lineTo(0,15.5); ctx.lineTo(-6,17); ctx.lineTo(-6,15); ctx.lineTo(-2,11); ctx.lineTo(-2,2); ctx.lineTo(-17,6); ctx.lineTo(-17,3); ctx.lineTo(-2,-4); ctx.lineTo(-2,-14); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.beginPath(); ctx.moveTo(0,-18); ctx.lineTo(2,-14); ctx.lineTo(2,-4); ctx.lineTo(17,3); ctx.lineTo(17,6); ctx.lineTo(2,2); ctx.lineTo(2,11); ctx.lineTo(6,15); ctx.lineTo(6,17); ctx.lineTo(0,15.5); ctx.lineTo(-6,17); ctx.lineTo(-6,15); ctx.lineTo(-2,11); ctx.lineTo(-2,2); ctx.lineTo(-17,6); ctx.lineTo(-17,3); ctx.lineTo(-2,-4); ctx.lineTo(-2,-14); ctx.closePath(); ctx.fill();
+      if(a.tug&&a.tug.ph!=='leave'){ ctx.fillStyle='#f2b705'; ctx.fillRect(-3,-25,6,7); ctx.strokeStyle='#000'; ctx.lineWidth=0.6/k; ctx.strokeRect(-3,-25,6,7); }   // pushback tug on the nose
+      ctx.restore();
       ctx.fillStyle=sel?'#00e5ff':'#9cff5a'; ctx.font='bold 11px ui-monospace,Menlo,monospace'; ctx.fillText(a.cs,q[0]+12,q[1]-8);
       continue; }
     // airborne / zoomed out: radar symbol + leader + label
@@ -1603,7 +1641,7 @@ function broadcast(force){ const now=Date.now(); if(!force&&now-lastB<50) return
   const msg={t:'state',wx:{inp:WX.inp,cur:WX.cur,hist:WX.hist.slice(-600),active:activeRwy},
     sb:Object.keys(SBOFF), traffic:TR.map(a=>{ let v=[0,0],vz=0; if(a._bp){ const dt=(now-a._bt)/1000; if(dt>0.02){ v=[(a.pos[0]-a._bp[0])/dt,(a.pos[1]-a._bp[1])/dt]; vz=(a.alt-a._ba)/dt; } }
       a._bp=a.pos.slice(); a._ba=a.alt; a._bt=now;
-      return {ts:now,id:a.id,kind:a.kind,cs:a.cs,type:a.type,airline:a.airline,rep:a.rep||0,eng:!!a.eng,lt:lightsOf(a),gear:a.kind==='ac'?+(a.gearK??1).toFixed(2):1,crash:a.mode==='crash',pos:a.pos,hdg:a.hdg,pt:+(a.pitch||0).toFixed(1),alt:a.alt,air:!!a.air,ias:a.ias,v:[+v[0].toFixed(2),+v[1].toFixed(2)],vz:+vz.toFixed(2)}; })};
+      return {ts:now,id:a.id,kind:a.kind,cs:a.cs,type:a.type,airline:a.airline,rep:a.rep||0,eng:!!a.eng,lt:lightsOf(a),gear:a.kind==='ac'?+(a.gearK??1).toFixed(2):1,crash:a.mode==='crash',pos:a.pos,hdg:a.hdg,pt:+(a.pitch||0).toFixed(1),alt:a.alt,air:!!a.air,ias:a.ias,tug:a.tug?a.tug.ph:undefined,v:[+v[0].toFixed(2),+v[1].toFixed(2)],vz:+vz.toFixed(2)}; })};
   const wxDue=force||now-lastWxB>=1000; if(wxDue) lastWxB=now; else delete msg.wx;   // the full weather block (600-sample history) only once a second
   try{ bc&&bc.postMessage(msg); }catch(e){}
   if(NET.on) NET.sendState(force?{wx:{inp:WX.inp},wxc:WX.cur,traffic:msg.traffic,sb:msg.sb}:{wxc:WX.cur,traffic:msg.traffic,sb:msg.sb});

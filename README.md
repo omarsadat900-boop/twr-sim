@@ -14,3 +14,7 @@ New → Web Service → bu depo → Build: `npm install`, Start: `npm start`.
 
 ## Kaynak
 `kaynak/` klasörü: meydan verisi (`data/ltac.json`, `data/geo_tr.json`), sayfa şablonları (`public/*.template.html`, `wx.js`, `net.js`) ve derleme betiği (`tools/build_all.py`). Derlenen sayfalar `public/` klasörüne kopyalanır (tower.html → atc.html).
+
+## 3D uçak modelleri
+Kule görünümünde 11 tipin hepsi gerçek uçak modelleriyle çizilir: FlightGear açık kaynak uçakları (GPL) ve A350 için
+amvlab (CC BY 4.0). Ayrıntılar ve boyalar `public/models3d/CREDITS.md`, yeniden üretmek için `kaynak/tools/fg/build_models.sh`.
