@@ -345,6 +345,37 @@ for(const r of DATA.runways){
   }
 }
 for(const e of DATA.taxi.edges){ if(e.kind==='runway') continue; ribbon('yellow',e.pts,e.kind==='leadin'?0.8:1.0,0.1); }
+// ---------- stand markings (Omar 2026-11-28): the existing lines stay where they are; added on top of them:
+// nose-wheel turn-in curves from the taxilane into each lead-in (both directions), the lead-in continued past the
+// stop mark, a stop bar at the nose-wheel stop point, and the stand number painted on the ground (yellow on black)
+const STAND_EXT=14, TURN_R=32;
+{ const NB={}; for(const e of DATA.taxi.edges){ if(e.kind==='runway') continue; (NB[e.a]=NB[e.a]||[]).push(e); (NB[e.b]=NB[e.b]||[]).push(e); }
+  const SID={}; for(const st of DATA.stands) SID[st.id]=st;
+  const D=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]), U=(a,b)=>{ const l=D(a,b)||1; return [(b[0]-a[0])/l,(b[1]-a[1])/l]; };
+  const label=(txt,p,u,w)=>{ const c=document.createElement('canvas'); c.width=192; c.height=112; const g=c.getContext('2d');
+    g.fillStyle='#111'; g.fillRect(0,0,192,112); g.fillStyle='#f1c12b'; g.font='bold '+(txt.length>3?78:txt.length>2?96:104)+'px system-ui,Arial'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(txt,96,60);
+    const t=new THREE.CanvasTexture(c); t.anisotropy=renderer.capabilities.getMaxAnisotropy();
+    const geo=new THREE.PlaneGeometry(w,w*112/192); geo.rotateX(-Math.PI/2);
+    const mat=new THREE.MeshBasicMaterial({map:t,polygonOffset:true,polygonOffsetFactor:-2}); NIGHT_MATS.push(mat);
+    const m=new THREE.Mesh(geo,mat); m.rotation.y=-Math.atan2(u[0],u[1]); m.position.set(p[0],0.16,-p[1]); scene.add(m); };
+  for(const e of DATA.taxi.edges){ if(e.kind!=='leadin') continue;
+    const id=(e.name||'').replace(/^STAND\s*/,''), st=SID[id]; if(!st) continue;
+    let P=e.pts, lane=e.a; if(D(P[P.length-1],st.xy)>D(P[0],st.xy)){ P=P.slice().reverse(); lane=e.b; }
+    const L0=P[0], u=U(P[0],P[1]), l1=D(P[0],P[1]);
+    for(const f of NB[lane]||[]){ if(f===e||f.kind==='leadin') continue;
+      const q=f.a===lane?f.pts:f.pts.slice().reverse(), din=U(q[1],q[0]), th=Math.acos(Math.max(-1,Math.min(1,din[0]*u[0]+din[1]*u[1])));
+      if(th<0.25||th>2.6) continue;   // straight on, or a U-turn: no turn-in curve
+      let t=TURN_R*Math.tan(th/2); t=Math.min(t,0.8*D(q[0],q[1]),0.7*l1);
+      const A=[L0[0]-din[0]*t,L0[1]-din[1]*t], B=[L0[0]+u[0]*t,L0[1]+u[1]*t], pts=[];
+      for(let i=0;i<=16;i++){ const k=i/16, a=(1-k)*(1-k), b=2*k*(1-k), c=k*k; pts.push([a*A[0]+b*L0[0]+c*B[0],a*A[1]+b*L0[1]+c*B[1]]); }
+      ribbon('yellow',pts,0.8,0.105); }
+    const hr=st.hdg*Math.PI/180, fw=[Math.sin(hr),Math.cos(hr)], nr=[fw[1],-fw[0]], S=st.xy;
+    seg('yellow',S,[S[0]+fw[0]*STAND_EXT,S[1]+fw[1]*STAND_EXT],0.8,0.1);                                   // lead-in continued past the stop mark
+    seg('yellow',[S[0]-nr[0]*3.5,S[1]-nr[1]*3.5],[S[0]+nr[0]*3.5,S[1]+nr[1]*3.5],0.9,0.11);                  // stop bar (nose wheel)
+    label(id,[L0[0]+u[0]*Math.min(22,0.4*l1),L0[1]+u[1]*Math.min(22,0.4*l1)],u,9);                              // number on the lead-in, read by the pilot turning in
+    label(id,[S[0]+fw[0]*(STAND_EXT+5),S[1]+fw[1]*(STAND_EXT+5)],fw,7);                                         // number ahead of the stop bar
+  }
+}
 function nearestDir(p){ let bd=1e9, dir=[1,0];
   for(const e of DATA.taxi.edges){ if(e.kind==='runway'||e.kind==='leadin') continue;
     for(let i=0;i<e.pts.length-1;i++){ const a=e.pts[i], b=e.pts[i+1], vx=b[0]-a[0], vy=b[1]-a[1], L2=vx*vx+vy*vy||1;
@@ -373,11 +404,25 @@ if(DATA.buildings && DATA.buildings.length){
   HEMI=new THREE.HemisphereLight('#e6eef5','#7a7058',0.75); scene.add(HEMI);
   const sun=new THREE.DirectionalLight('#ffffff',0.55); sun.position.set(-0.5,1,0.6); scene.add(sun); SUN=sun;
   const wall=new THREE.MeshLambertMaterial({color:'#c9c4b8'}), roof=new THREE.MeshLambertMaterial({color:'#8d939a'});
+  // Apron 4 passenger terminal (B40): glass curtain wall with mullions and floor bands, light roof with an overhanging canopy
+  const TERM={B40:1};
+  const tTex=(w,h,paint,rx,ry)=>{ const c=document.createElement('canvas'); c.width=w; c.height=h; paint(c.getContext('2d'),w,h);
+    const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(rx,ry); t.anisotropy=renderer.capabilities.getMaxAnisotropy(); return t; };
+  const glassT=tTex(256,256,(g,W,H)=>{ const gr=g.createLinearGradient(0,0,0,H); gr.addColorStop(0,'#7fb2c4'); gr.addColorStop(1,'#3f7488'); g.fillStyle=gr; g.fillRect(0,0,W,H);
+      g.fillStyle='#d9dee2'; for(let x=0;x<W;x+=32) g.fillRect(x,0,3,H); g.fillRect(0,0,W,10); g.fillRect(0,H/2-4,W,8); },1/8,1/9);   // one tile = 8 m wide, 2 floors of 4.5 m
+  const roofT=tTex(256,256,(g,W,H)=>{ g.fillStyle='#cfd4d8'; g.fillRect(0,0,W,H); g.strokeStyle='#aab1b7'; g.lineWidth=2; for(let x=0;x<W;x+=16){ g.beginPath(); g.moveTo(x,0); g.lineTo(x,H); g.stroke(); } },1/40,1/40);
+  const glassM=new THREE.MeshLambertMaterial({map:glassT}), roofM=new THREE.MeshLambertMaterial({map:roofT}), canopyM=new THREE.MeshLambertMaterial({color:'#d9dde0',side:THREE.DoubleSide});
   for(const b of DATA.buildings){
     const sh=new THREE.Shape(b.pts.map(p=>new THREE.Vector2(p[0],p[1])));
     const g=new THREE.ExtrudeGeometry(sh,{depth:b.h,bevelEnabled:false});
     g.rotateX(-Math.PI/2);
-    scene.add(new THREE.Mesh(g,[roof,wall]));
+    if(!TERM[b.id]){ scene.add(new THREE.Mesh(g,[roof,wall])); continue; }
+    scene.add(new THREE.Mesh(g,[roofM,glassM]));
+    // canopy: thin white slab a little larger than the footprint, sitting on the roof edge
+    const cx=b.pts.reduce((a,p)=>a+p[0],0)/b.pts.length, cy=b.pts.reduce((a,p)=>a+p[1],0)/b.pts.length;
+    const big=b.pts.map(p=>{ const dx=p[0]-cx, dy=p[1]-cy, L=Math.hypot(dx,dy)||1; return new THREE.Vector2(p[0]+dx/L*6,p[1]+dy/L*6); });
+    const cg=new THREE.ExtrudeGeometry(new THREE.Shape(big),{depth:1.2,bevelEnabled:false}); cg.rotateX(-Math.PI/2); cg.translate(0,b.h,0);
+    scene.add(new THREE.Mesh(cg,canopyM));
   }
 }
 
@@ -577,7 +622,10 @@ const objs=new Map(); window.__objs=objs;
 // the hand-built model is used. Sources and licences: public/models3d/CREDITS.md
 const GLB_FILES={ B738:['B738.glb','-x'], A320:['A320.glb','-x'], B744:['B744.glb','-x'], A310:['A310.glb','-x'], B763:['B763.glb','-x'],
   DH8D:['DH8D.glb','-x'], GLF5:['GLF5.glb','-x'], GLF4:['GLF5.glb','-x'], C172:['C172.glb','-x'], BE40:['BE40.glb','-x'], A359:['A350.glb','+x'] }, GLB_REQ={};
+const VGLB_FILES={ 'Follow-me':['followme.glb','-x'], 'Passenger bus':['bus.glb','+z'] };
 const GLB_LDR=THREE.GLTFLoader?new THREE.GLTFLoader():null;
+function needVehGLB(type){ const f=VGLB_FILES[type]; if(!f||!GLB_LDR||GLB_REQ['v:'+type]) return; GLB_REQ['v:'+type]=1;
+  GLB_LDR.load('models3d/'+f[0],gl=>{ MODELS.useVehGLB(type,gl.scene,f[1]); for(const o of objs.values()) if(o.type===type) o.type=''; },undefined,e=>console.warn('3D model yüklenemedi:',f[0],e&&e.message)); }
 function needGLB(type){ const f=GLB_FILES[type]; if(!f||!GLB_LDR||GLB_REQ[type]) return; GLB_REQ[type]=1;
   GLB_LDR.load('models3d/'+f[0],gl=>{ MODELS.useGLB(type,gl.scene,f[1]);
     for(const o of objs.values()) if(o.type===type) o.type='';   // rebuild aircraft already on screen with the new model
@@ -597,7 +645,7 @@ function trafficFrame(now){
   const wall=performance.timeOrigin+now;   // wall-clock time of this frame
   for(const a of best.values()){
     seen.add(a.id); let o=objs.get(a.id);
-    if(!o||o.type!==a.type){ if(o){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); if(o.tug) scene.remove(o.tug.g); } if(a.kind!=='veh') needGLB(a.type); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),buf:[],type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
+    if(!o||o.type!==a.type){ if(o){ scene.remove(o.g); if(o.fire) scene.remove(o.fire); if(o.tug) scene.remove(o.tug.g); } if(a.kind!=='veh') needGLB(a.type); else needVehGLB(a.type); o={g:a.kind==='veh'?MODELS.vehicle(a.type):MODELS.aircraft(a.type,a.airline),buf:[],type:a.type}; scene.add(o.g); objs.set(a.id,o); if(a.kind==='ac') o.lt=acLights(o); }
     const ts=a.ts||null, key=ts||(a.pos[0]+','+a.pos[1]+','+a.hdg+','+a.alt);
     if(o.key!==key){ o.key=key; const sts=ts||wall; clkSample(wall-sts);
       const s={ts:sts,p:a.pos.slice(),alt:a.alt,h:a.hdg,v:a.v||[0,0],vz:a.vz||0}, L=o.buf[o.buf.length-1];

@@ -307,14 +307,29 @@ const MODELS = (()=>{
     lightBar(g,1.62,6.6,0.5,['#ff9a00'],fl,1.6);
     g.userData={flashers:fl,lights:{},tugWheels:W}; return g; }
   const VTYPE={'Fire truck':'fire','Police':'police','Ambulance':'ambulance','Follow-me':'follow','Passenger bus':'bus','Catering truck':'catering'};
-  function vehicle(type){ const f=V[VTYPE[type]]||V.follow; return f(); }
+  // real vehicle models (glTF): the file's front axis is turned to -z, the model is scaled to the vehicle's real length,
+  // centred and set on the ground; the beacons of the hand-made model are kept on top of it
+  const VGLB={}, VLEN={'Fire truck':12,'Police':4.6,'Ambulance':6.5,'Follow-me':4.4,'Passenger bus':13.8,'Catering truck':9};
+  function useVehGLB(type,root,axis){
+    const piv=new THREE.Group(); piv.add(root); piv.rotation.y={'+x':Math.PI/2,'-x':-Math.PI/2,'+z':Math.PI,'-z':0}[axis]||0; piv.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(piv), k=(VLEN[type]||6)/(box.max.z-box.min.z);
+    piv.scale.setScalar(k); piv.position.set(-(box.min.x+box.max.x)/2*k,-box.min.y*k,-(box.min.z+box.max.z)/2*k);
+    root.traverse(o=>{ if(!o.isMesh) return; const old=Array.isArray(o.material)?o.material[0]:o.material; if(old.map) old.map.encoding=THREE.LinearEncoding;
+      o.material=new THREE.MeshLambertMaterial({map:old.map||null,color:old.map?'#ffffff':old.color,side:THREE.DoubleSide,alphaTest:old.alphaTest||0,transparent:!!old.transparent,opacity:old.opacity}); });
+    const t=new THREE.Group(); t.add(piv); t.userData.h=(box.max.y-box.min.y)*k; VGLB[type]=t; }
+  function vehicle(type){ const f=V[VTYPE[type]]||V.follow, g=f(); const T=VGLB[type]; if(!T) return g;
+    // keep only the beacons (and their glow) of the hand-made vehicle, lifted to the roof of the real model
+    const keep=new Set(); for(const fl of g.userData.flashers||[]){ keep.add(fl.m); if(fl.sp) keep.add(fl.sp); }
+    const top=Math.max(...[...keep].map(o=>o.position.y)); const dy=T.userData.h+0.15-top+0.2;
+    for(const c of [...g.children]) if(!keep.has(c)) g.remove(c); else { c.position.y+=dy; c.position.z*=0.6; }
+    g.add(T.clone()); return g; }
   // flasher animation: call every frame with time in seconds
   function animate(g,t,state){
     const u=g.userData; if(!u) return;
     (u.flashers||[]).forEach(f=>{ const on=((t*f.rate+f.ph)%1)<0.45; f.m.material=on?f.on:f.off; if(f.sp) f.sp.visible=on; });
     if(u.props&&u.props.length){ const sp=state&&state.eng?(state.ias>5?40:25):0; u.props.forEach(p=>p.rotation.z+=sp*0.016); }
   }
-  return { aircraft, vehicle, tug, animate, useGLB, hasGLB:t=>!!GLB[t], SPEC:S, VTYPE };
+  return { aircraft, vehicle, tug, animate, useGLB, useVehGLB, hasVehGLB:t=>!!VGLB[t], hasGLB:t=>!!GLB[t], SPEC:S, VTYPE };
 })();
 // ---------- fire effect for a crash (GND-05) ----------
 MODELS.fire=function(size){ const g=new THREE.Group(), k=size||1, parts=[];
