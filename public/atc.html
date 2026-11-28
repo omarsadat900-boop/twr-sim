@@ -4807,7 +4807,7 @@ function setAcLights(o,m,t,night,air){ const X=o.lt; if(!X) return; const sz=(ni
   const bc=t%1.1, sb=t%1.2, beam=Math.max(0,fw-0.2)/0.8;   // landing/taxi lights point forward: nothing from the side or behind
   on('navL',(m&4)&&side('navL'),0.008); on('navR',(m&4)&&side('navR'),0.008); on('tail',(m&4)&&fw<-0.34,0.007);
   on('beaconTop',(m&8)&&bc<0.16,0.01); on('beaconBot',(m&8)&&bc>0.55&&bc<0.71,0.01);
-  const strobe=(m&16)&&(sb<0.05||(sb>0.14&&sb<0.19)); on('strobeL',strobe,0.013); on('strobeR',strobe,0.013);
+  const strobe=(m&16)&&(sb<0.05||(sb>0.14&&sb<0.19)); const ss=night?0.013:0.03; on('strobeL',strobe,ss); on('strobeR',strobe,ss);   // strobes are bright enough to see in daylight
   on('landing',m&2,(air?0.016:0.012)*beam*beam); on('taxi',(m&1)&&!(m&2),0.009*beam*beam);
   X.pool.visible=night&&!air&&!!(m&3); }
 
@@ -4929,14 +4929,14 @@ function trafficFrame(now){
     if(o.fire){ if(!a.crash){ scene.remove(o.fire); o.fire=null; } else { o.fire.position.set(o.r[0],h,-o.r[1]); MODELS.animateFire(o.fire,now/1000); } }
     o.kind=a.kind; if(o.lt) setAcLights(o,a.lt||0,now/1000,NIGHT_ON,!!a.air);
     // pitch: nose up about the main gear on the ground (rotation / flare), about the centre in the air
-    o.rp=(o.rp||0)+(((a.pt||0)-(o.rp||0)))*k; const pr=o.rp*Math.PI/180, SP=o.g.userData.spec, zm=SP&&SP.gear?SP.gear.main-SP.L/2:0;
+    o.rp=(o.rp||0)+(((a.pt||0)-(o.rp||0)))*k; o.rb=(o.rb||0)+(((a.bk||0)-(o.rb||0)))*k; const pr=o.rp*Math.PI/180, SP=o.g.userData.spec, zm=SP&&SP.gear?SP.gear.main-SP.L/2:0;
     // aircraft are drawn larger than life (TRAFFIC_SCALE) but anchored on the NOSE WHEEL, so the nose wheel stays exactly on the
     // yellow lines and stops on the stand mark; the bigger airframe grows backwards from it
     let ax=o.r[0], ay=o.r[1];
     if(a.kind==='ac'&&SP&&SP.gear){ const d=(SP.L/2-SP.gear.nose)*(1-TRAFFIC_SCALE), hr=o.rh*Math.PI/180; ax+=Math.sin(hr)*d; ay+=Math.cos(hr)*d; }
     o.g.rotation.order='YXZ'; o.g.position.set(ax,h+(h<3&&a.kind==='ac'?Math.max(0,zm*Math.sin(pr))*TRAFFIC_SCALE:0),-ay);
     { const W=o.g.userData.wheels; if(W&&W.length){ const lp=o.lp||[ax,ay], dd=Math.hypot(ax-lp[0],ay-lp[1]); o.lp=[ax,ay];
-        if(dd<50&&h<1){ const fwd=Math.sin(o.rh*Math.PI/180)*(ax-lp[0])+Math.cos(o.rh*Math.PI/180)*(ay-lp[1])>=0?1:-1; for(const w of W) w.n.rotation.z+=fwd*dd/(w.r*TRAFFIC_SCALE); } } } o.g.rotation.y=-o.rh*Math.PI/180; o.g.rotation.x=a.kind==='ac'?pr:0;
+        if(dd<50&&h<1){ const fwd=Math.sin(o.rh*Math.PI/180)*(ax-lp[0])+Math.cos(o.rh*Math.PI/180)*(ay-lp[1])>=0?1:-1; for(const w of W) w.n.rotation.z+=fwd*dd/(w.r*TRAFFIC_SCALE); } } } o.g.rotation.y=-o.rh*Math.PI/180; o.g.rotation.x=a.kind==='ac'?pr:0; o.g.rotation.z=a.kind==='ac'?-o.rb*Math.PI/180:0;   // bank into air turns (right turn = right wing down)
     // traffic is drawn a fixed 20% larger; zooming in or out does not change its size
     const gs=a.kind==='veh'?(a.type==='Passenger bus'?BUS_SCALE:VEH_SCALE):TRAFFIC_SCALE; o.g.scale.setScalar(gs);
     if(a.kind==='ac') tugFrame(o,a,SP,now,dt);
