@@ -125,6 +125,18 @@ body{margin:0;background:#9fb9cf;color:var(--paper);font-family:var(--body);over
   <div class="acts"><button class="btn" type="button" id="authCancel" data-t="cancel">Vazgeç</button><button class="btn pri" type="submit" id="authGo">Kayıt ol</button></div>
 </form></div>
 
+<div class="veil" id="dlgGoogle" hidden><div class="card">
+  <h2 data-t="gTitle">Google ile giriş</h2>
+  <p id="gBody" data-t="gBody">Google hesabınla giriş yap. İlk girişte hesabın kaydedilir.</p>
+  <div id="gBtn" style="min-height:44px;display:flex;justify-content:center"></div>
+  <div class="err" id="gErr"></div>
+  <div class="acts"><button class="btn" type="button" id="gCancel" data-t="cancel">Vazgeç</button></div>
+</div></div>
+<div class="veil" id="dlgWait" hidden><div class="card" aria-live="polite">
+  <h2 id="wTitle" data-t="wTitle">Onay bekleniyor</h2>
+  <p id="wBody"></p>
+  <div class="acts"><button class="btn" type="button" id="wCancel" data-t="cancel">Vazgeç</button><button class="btn pri" type="button" id="wRetry" data-t="retry" hidden>Tekrar dene</button></div>
+</div></div>
 <div class="veil" id="dlgPilot" hidden><form class="card" id="fPilot">
   <h2 data-t="pilotTitle">Pilot (Instructor)</h2>
   <p data-t="pilotBody">Pilot her zaman instructor'dır: trafiği o yönetir, hava durumunu o ayarlar. Pilot ekranı bir sonraki adımda hazırlanacak.</p>
@@ -143,13 +155,23 @@ const T={
      localnote:'Hesap şimdilik bu tarayıcıda tutulur. Çok oyunculu sunucu adımında gerçek hesaba geçecek.',cancel:'Vazgeç',ok:'Tamam',
      pilotTitle:'Pilot (Instructor)',pilotBody:'Pilot her zaman instructor\'dır: trafiği o yönetir, hava durumunu o ayarlar. Pilot ekranı bir sonraki adımda hazırlanacak.',
      note:'LTAC Esenboğa kule simülatörü. Bütün trafik gerçek kişiler tarafından uçurulur.',
-     errUser:'Kullanıcı adı girin.',errName:'Ad soyad girin.',errNo:'Bu kullanıcı adıyla kayıt yok. Önce kayıt olun.',errTaken:'Bu kullanıcı adı alınmış.'},
+     errUser:'Kullanıcı adı girin.',errName:'Ad soyad girin.',errNo:'Bu kullanıcı adıyla kayıt yok. Önce kayıt olun.',errTaken:'Bu kullanıcı adı alınmış.',
+     gsignin:'Google ile giriş',gTitle:'Google ile giriş',gBody:'Google hesabınla giriş yap. İlk girişte hesabın kaydedilir.',gNeed:'Katılmak için önce Google hesabınla giriş yap.',
+     gErr:'Giriş yapılamadı. Tekrar dene.',gLoadErr:'Google giriş penceresi yüklenemedi. Bağlantını kontrol et.',approval:'Sahip onayıyla',owner:'sahip',
+     wTitle:'Onay bekleniyor',wWait:'İsteğin sahiplere gönderildi. Bir sahip onaylayınca otomatik olarak gireceksin.',wConn:'Sunucuya bağlanılıyor…',
+     wNoOwner:'Şu anda çevrimiçi bir sahip yok. Bir sahip oyundayken tekrar dene.',wDenied:'İsteğin reddedildi.',wTimeout:'İsteğe zamanında cevap gelmedi.',
+     wGranted:'Onaylandı, giriliyor…',retry:'Tekrar dene',wTitleNo:'Giriş yapılamıyor'},
  en:{settings:'Settings',account:'Account',signup:'Sign up',signin:'Sign in',signout:'Sign out',joinas:'Join as',nolimit:'No participant limit',
      language:'Language: English',language2:'Language',anim:'Background animation',close:'Close',fullname:'Full name',callsign:'Username',
      localnote:'Accounts are kept in this browser for now. They move to real accounts with the multiplayer server step.',cancel:'Cancel',ok:'OK',
      pilotTitle:'Pilot (Instructor)',pilotBody:'The pilot is always the instructor: they run the traffic and set the weather. The pilot screen is the next step.',
      note:'LTAC Esenboğa tower simulator. All traffic is flown by real people.',
-     errUser:'Enter a username.',errName:'Enter your full name.',errNo:'No account with this username. Sign up first.',errTaken:'This username is taken.'}
+     errUser:'Enter a username.',errName:'Enter your full name.',errNo:'No account with this username. Sign up first.',errTaken:'This username is taken.',
+     gsignin:'Sign in with Google',gTitle:'Sign in with Google',gBody:'Sign in with your Google account. Your account is registered on the first sign-in.',gNeed:'Sign in with your Google account to join.',
+     gErr:'Sign-in failed. Try again.',gLoadErr:'The Google sign-in window could not load. Check your connection.',approval:'Needs owner approval',owner:'owner',
+     wTitle:'Waiting for approval',wWait:'Your request was sent to the owners. You join automatically once one of them approves.',wConn:'Connecting to the server…',
+     wNoOwner:'No owner is online right now. Try again while an owner is in the game.',wDenied:'Your request was declined.',wTimeout:'Nobody answered your request in time.',
+     wGranted:'Approved, joining…',retry:'Try again',wTitleNo:'Can\'t join'}
 };
 let lang=store.get('lang','tr');
 function tr(k){ return (T[lang]||T.tr)[k]||k; }
@@ -158,9 +180,14 @@ function applyLang(){ document.documentElement.lang=lang;
 
 // ---------- account (local) ----------
 let user=store.get('user',null);
-function refreshAcct(){ const s=!!user;
-  document.getElementById('whoName').textContent=s?user.name:tr('account');
-  document.getElementById('acctBtns').hidden=s; document.getElementById('acctOut').hidden=!s; }
+// Google sign-in (when the server has it turned on); otherwise the local account above is used as before.
+const AUTH={on:false,clientId:'',me:null};
+function refreshAcct(){ const s=AUTH.on?!!AUTH.me:!!user;
+  document.getElementById('whoName').textContent=AUTH.on?(AUTH.me?AUTH.me.name+(AUTH.me.owner?' ★':''):tr('account')):(s?user.name:tr('account'));
+  document.getElementById('acctBtns').hidden=s; document.getElementById('acctOut').hidden=!s;
+  document.getElementById('btnSignUp').hidden=AUTH.on;
+  if(AUTH.on){ document.getElementById('btnSignIn').textContent=tr('gsignin');
+    document.querySelectorAll('.join .lim').forEach(el=>el.textContent=AUTH.me&&AUTH.me.owner?tr('nolimit'):tr('approval')); } }
 let authMode='up';
 function openAuth(mode){ authMode=mode; const up=mode==='up';
   document.getElementById('authTitle').textContent=up?tr('signup'):tr('signin');
@@ -177,14 +204,16 @@ document.getElementById('fAuth').addEventListener('submit',e=>{ e.preventDefault
   user={user:u,name:acc[u].name}; store.set('user',user); refreshAcct(); hide('dlgAuth'); });
 document.getElementById('authCancel').onclick=()=>hide('dlgAuth');
 document.getElementById('btnSignUp').onclick=()=>openAuth('up');
-document.getElementById('btnSignIn').onclick=()=>openAuth('in');
-document.getElementById('btnSignOut').onclick=()=>{ user=null; store.set('user',null); refreshAcct(); };
+document.getElementById('btnSignIn').onclick=()=>AUTH.on?openGoogle(false):openAuth('in');
+document.getElementById('btnSignOut').onclick=async()=>{
+  if(AUTH.on){ try{ await fetch('/auth/logout',{method:'POST'}); }catch(e){} try{ google.accounts.id.disableAutoSelect(); }catch(e){} store.set('user',null); location.href='/'; return; }
+  user=null; store.set('user',null); refreshAcct(); };
 
 // ---------- dialogs ----------
 function show(id){ document.getElementById(id).hidden=false; }
 function hide(id){ document.getElementById(id).hidden=true; }
 document.querySelectorAll('.veil').forEach(v=>v.addEventListener('click',e=>{ if(e.target===v) v.hidden=true; }));
-addEventListener('keydown',e=>{ if(e.key==='Escape') document.querySelectorAll('.veil').forEach(v=>v.hidden=true); });
+addEventListener('keydown',e=>{ if(e.key==='Escape') document.querySelectorAll('.veil').forEach(v=>{ if(v.id!=='dlgWait') v.hidden=true; }); });
 
 // settings
 let anim=store.get('anim',!matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -195,8 +224,60 @@ document.getElementById('fSettings').addEventListener('submit',e=>{ e.preventDef
 document.getElementById('btnLang').onclick=()=>{ lang=lang==='tr'?'en':'tr'; store.set('lang',lang); applyLang(); };
 
 // join
-document.getElementById('joinAtc').onclick=()=>{ location.href='atc.html'; };
-document.getElementById('joinPilot').onclick=()=>{ location.href='pilot.html'; };
+const PAGE={atc:'atc.html',pilot:'pilot.html'};
+let pendingJoin=null;
+function join(role){
+  if(!AUTH.on){ location.href=PAGE[role]; return; }
+  if(!AUTH.me){ pendingJoin=role; openGoogle(true); return; }
+  if(AUTH.me.owner){ location.href=PAGE[role]; return; }
+  askOwners(role);
+}
+document.getElementById('joinAtc').onclick=()=>join('atc');
+document.getElementById('joinPilot').onclick=()=>join('pilot');
+// ---------- Google sign-in ----------
+let gisLoaded=null;
+function loadGis(){ return gisLoaded||(gisLoaded=new Promise((ok,no)=>{ const sc=document.createElement('script');
+  sc.src='https://accounts.google.com/gsi/client'; sc.async=true; sc.onload=ok; sc.onerror=()=>{ gisLoaded=null; no(); }; document.head.appendChild(sc); })); }
+async function openGoogle(forJoin){
+  document.getElementById('gBody').textContent=tr(forJoin?'gNeed':'gBody'); document.getElementById('gErr').textContent='';
+  show('dlgGoogle');
+  try{ await loadGis(); }catch(e){ document.getElementById('gErr').textContent=tr('gLoadErr'); return; }
+  google.accounts.id.initialize({client_id:AUTH.clientId,callback:onGoogle,ux_mode:'popup',cancel_on_tap_outside:true});
+  const el=document.getElementById('gBtn'); el.innerHTML='';
+  google.accounts.id.renderButton(el,{theme:'outline',size:'large',text:'continue_with',shape:'pill',locale:lang}); }
+async function onGoogle(r){
+  try{ const res=await fetch('/auth/google',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:r.credential})});
+    if(!res.ok) throw 0; const j=await res.json(); signedIn(j.me); hide('dlgGoogle');
+    if(pendingJoin){ const role=pendingJoin; pendingJoin=null; join(role); } }
+  catch(e){ document.getElementById('gErr').textContent=tr('gErr'); } }
+document.getElementById('gCancel').onclick=()=>{ pendingJoin=null; hide('dlgGoogle'); };
+function signedIn(me){ AUTH.me=me; store.set('user',{name:me.name,email:me.email}); refreshAcct();
+  if(!window.TWRGATE){ const sc=document.createElement('script'); sc.src='/gate.js'; document.body.appendChild(sc); } }
+// ---------- guests: ask an online owner, then go in ----------
+let waitRole=null, unsub=null, sent=false;
+function waitMsg(key,title){ document.getElementById('wBody').textContent=tr(key); document.getElementById('wTitle').textContent=tr(title||'wTitle'); }
+function endWait(){ if(unsub) unsub(); unsub=null; sent=false; }
+function askOwners(role){
+  waitRole=role; sent=false; document.getElementById('wRetry').hidden=true; waitMsg('wConn'); show('dlgWait');
+  const go=()=>{ if(window.TWRGATE){ if(unsub) unsub(); unsub=TWRGATE.on(onGate); if(TWRGATE.ready) send(); } else setTimeout(go,100); };
+  go(); }
+function send(){ if(!sent&&waitRole&&TWRGATE.send({t:'request',role:waitRole})) sent=true; }
+function fail(key){ endWait(); waitMsg(key,'wTitleNo'); document.getElementById('wRetry').hidden=false; }
+function onGate(m){
+  if(!waitRole) return;
+  if(m.t==='hi') send();
+  if(m.t==='waiting') waitMsg('wWait');
+  if(m.t==='noowner') fail('wNoOwner');
+  if(m.t==='denied') fail('wDenied');
+  if(m.t==='timeout') fail('wTimeout');
+  if(m.t==='offline'&&sent){ sent=false; waitMsg('wConn'); }
+  if(m.t==='granted'){ waitMsg('wGranted'); const role=m.role; endWait(); waitRole=null; location.href=PAGE[role]; } }
+document.getElementById('wCancel').onclick=()=>{ if(window.TWRGATE&&sent) TWRGATE.send({t:'cancel'}); endWait(); waitRole=null; hide('dlgWait'); };
+document.getElementById('wRetry').onclick=()=>askOwners(waitRole);
+document.getElementById('dlgWait').addEventListener('click',e=>{ if(e.target.id==='dlgWait'&&waitRole){ e.stopImmediatePropagation(); } },true);
+fetch('/auth/config').then(r=>r.ok?r.json():null).then(c=>{ if(!c||!c.enabled) return;
+  AUTH.on=true; AUTH.clientId=c.clientId; if(c.me) signedIn(c.me); refreshAcct();
+  const need=new URLSearchParams(location.search).get('need'); if(need==='atc'||need==='pilot'){ history.replaceState(null,'','/'); join(need); } }).catch(()=>{});
 document.getElementById('fPilot').addEventListener('submit',e=>{ e.preventDefault(); hide('dlgPilot'); });
 
 applyLang();

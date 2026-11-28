@@ -9,6 +9,22 @@ npm start          # http://localhost:8080
 ```
 Ortam değişkenleri: `PORT` (varsayılan 8080), `ADMIN_KEY` (verilirse yönetici olmak için linke `?key=...` eklenir; verilmezse ilk giren yönetici olur).
 
+## Google ile giriş ve sahip onayı
+`GOOGLE_CLIENT_ID` verilince giriş açılır:
+- Herkes önce Google hesabıyla giriş yapar (ilk giriş = kayıt).
+- `OWNER_EMAILS` listesindeki sahipler onaysız girer ve yönetici olur.
+- Diğer herkes **her girişte** çevrimiçi bir sahibin onayını bekler. Sahip ekranında Onayla/Reddet kartı çıkar; çevrimiçi sahip yoksa giriş yapılamaz.
+- Onay seçilen rol (ATC ya da Pilot) içindir. Bağlantı koparsa 1 dakika içinde yeniden bağlanmak yeni onay istemez; sayfayı kapatıp sonra gelen yeniden onay ister.
+- Sahip birini "Çıkar" ile atarsa onayı da iptal olur.
+
+| Değişken | Açıklama |
+|---|---|
+| `GOOGLE_CLIENT_ID` | Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application). Authorized JavaScript origins: sitenin adresi (ör. `https://xxx.onrender.com`) ve yerel deneme için `http://localhost` ile `http://localhost:8080`. |
+| `OWNER_EMAILS` | Sahiplerin Gmail adresleri, virgülle ayrılmış. Depoya yazılmaz, sadece Render'da tutulur. |
+| `SESSION_SECRET` | Uzun rastgele bir metin. Verilmezse sunucu her yeniden başladığında (Render uykudan uyanınca) herkes tekrar giriş yapar. |
+
+`GOOGLE_CLIENT_ID` yoksa giriş kapalıdır ve eski davranış geçerlidir (ilk giren yönetici).
+
 ## Render
 New → Web Service → bu depo → Build: `npm install`, Start: `npm start`.
 
